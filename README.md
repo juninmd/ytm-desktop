@@ -150,6 +150,18 @@ the whole app, `aria-live` announcements on track change, `prefers-reduced-motio
 keyboard reachability for both actions on each card. Contrast targets WCAG AA on body text and
 controls.
 
+## Known advisories
+
+Dependabot reports one moderate advisory against the lockfile, accepted rather than ignored:
+
+| Crate | Advisory | Why it cannot be fixed here |
+|---|---|---|
+| `glib` 0.18.5 | Unsoundness in the `Iterator` / `DoubleEndedIterator` impls for `glib::VariantStrIter`, fixed in 0.20.0 | `gtk 0.18.2` — pulled in by Tauri's Linux backend through `muda` and `tao` — pins `glib = "^0.18"`, so 0.20.0 is not selectable. Resolution needs an upstream gtk-rs bump in Tauri. |
+
+It is a **Linux-only** dependency. `glib`, `gtk` and `atk` are not compiled for
+`x86_64-pc-windows-msvc` or Apple targets, so the Windows and macOS binaries never contain the
+affected code. Revisit when Tauri's Linux backend moves to gtk-rs 0.20+.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

@@ -275,7 +275,10 @@ fn poll_form<'a>(credentials: &'a Credentials, device_code: &'a str) -> Vec<(&'a
 
 /// On refresh, `client_secret` is optional per the specification; it is sent
 /// anyway so one credential shape covers every call.
-fn refresh_form<'a>(credentials: &'a Credentials, refresh_token: &'a str) -> Vec<(&'a str, &'a str)> {
+fn refresh_form<'a>(
+    credentials: &'a Credentials,
+    refresh_token: &'a str,
+) -> Vec<(&'a str, &'a str)> {
     vec![
         ("client_id", credentials.client_id.as_str()),
         ("client_secret", credentials.client_secret.as_str()),
@@ -449,7 +452,10 @@ mod tests {
             headers.get("Authorization").map(String::as_str),
             Some("SAPISIDHASH 1_abc")
         );
-        assert_eq!(headers.get("X-Goog-AuthUser").map(String::as_str), Some("0"));
+        assert_eq!(
+            headers.get("X-Goog-AuthUser").map(String::as_str),
+            Some("0")
+        );
         assert_eq!(
             headers.get("Origin").map(String::as_str),
             Some("https://music.youtube.com")
