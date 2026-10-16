@@ -1,0 +1,220 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   Read: high-density desktop product UI for people who already live in
+   Spotify. Dark shell, one warm YouTube-red accent, photographic-free
+   surfaces. Dials: VARIANCE 4 / MOTION 4 / DENSITY 7.
+
+   Deliberately excluded: purple hero gradients, glassmorphism on every
+   surface, pill-shaped everything, cream backgrounds.
+--------------------------------------------------------------------------- */
+@theme {
+  --font-sans:
+    "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial,
+    sans-serif;
+
+  --color-canvas: #07070a;
+  --color-panel: #0e0e12;
+  --color-raised: #17171d;
+  --color-hover: #20202a;
+  --color-line: #26262f;
+  --color-line-strong: #35353f;
+
+  --color-fg: #f6f6f8;
+  --color-muted: #9c9ca8;
+  --color-subtle: #6b6b77;
+
+  --color-accent: #ff3d5a;
+  --color-accent-strong: #ff1f45;
+  --color-accent-soft: #ff8095;
+
+  --radius-panel: 14px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-fg font-sans antialiased;
+    overflow: hidden;
+    /* Desktop chrome: nothing here should feel like a web page. */
+    cursor: default;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  ::selection {
+    background: var(--color-accent);
+    color: #fff;
+  }
+
+  /* One focus ring for the whole app, owned by the theme. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  button {
+    cursor: default;
+  }
+
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /* Chromium's native clear affordance duplicates our own button. */
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+
+/* Scrollbars: present, never shouty. */
+.scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: #32323d transparent;
+}
+.scroll-area::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-area::-webkit-scrollbar-thumb {
+  background: #32323d;
+  border: 4px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+.scroll-area::-webkit-scrollbar-thumb:hover {
+  background: #45454f;
+  background-clip: content-box;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keeps a decorative gradient from ending on a hard line. */
+.fade-bottom {
+  mask-image: linear-gradient(to bottom, #000 0%, #000 26%, transparent 100%);
+}
+
+/* Texture on generated artwork, so flat gradients read as printed sleeves. */
+.art-texture::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: linear-gradient(rgb(255 255 255 / 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.06) 1px, transparent 1px);
+  background-size: 14px 14px;
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* "Now playing" equaliser. */
+@keyframes eq-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  width: 14px;
+}
+.eq > i {
+  flex: 1;
+  height: 100%;
+  background: currentColor;
+  border-radius: 1px;
+  transform-origin: bottom;
+  animation: eq-pulse 900ms ease-in-out infinite;
+}
+.eq > i:nth-child(2) {
+  animation-delay: 180ms;
+}
+.eq > i:nth-child(3) {
+  animation-delay: 360ms;
+}
+.eq[data-paused="true"] > i {
+  animation-play-state: paused;
+  transform: scaleY(0.28);
+}
+
+/* Vertical range inputs (volume, seek) drawn from the theme. */
+input[type="range"].slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"].slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--track, #3a3a46);
+}
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 999px;
+  background: #fff;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+input[type="range"].slider:hover::-webkit-slider-thumb,
+input[type="range"].slider:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
