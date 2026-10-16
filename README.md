@@ -34,7 +34,7 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 
 ## Stack
 
-- **Tauri 2** — Rust backend, ~6 MB binary, no bundled Chromium
+- **Tauri 2** — Rust backend, ~8 MB release binary, no bundled Chromium (uses the system WebView2)
 - **React 19** + **TypeScript 6** (strict) — no router, no state library, one reducer for playback
 - **Tailwind 4** — CSS-first `@theme` tokens, Vite plugin
 - **lucide-react** — icons

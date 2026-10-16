@@ -93,7 +93,7 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
         </div>
 
         <p className="relative text-xs text-subtle">
-          Binário de ~6 MB · sem Electron · atualização assinada
+          Binário de ~8 MB · sem Electron · WebView2 do sistema
         </p>
       </section>
 
