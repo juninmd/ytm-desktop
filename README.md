@@ -15,6 +15,10 @@ authentication path is implemented end to end in Rust.
 | ![Album](docs/screenshots/05-album.png) | ![Library](docs/screenshots/06-library.png) |
 | ![Device code](docs/screenshots/02-device-code.png) | ![Search](docs/screenshots/07-search.png) |
 
+And the same UI inside the actual Tauri window on Windows — not a browser tab:
+
+![Native window](docs/screenshots/09-native-window.png)
+
 ## What is real and what is not
 
 | Area | Status |
@@ -134,6 +138,10 @@ npm run build        # tsc --strict + vite build
 cd src-tauri && cargo test --lib
 npm run preview & npm run screenshots   # writes docs/screenshots, fails on any console error
 ```
+
+`tools/screenshots.mjs` produces `01`–`08` against the production build and exits non-zero on any
+console error. `09-native-window.png` is a one-off capture of the running binary (`cargo build`, then
+`PrintWindow` against the window), which is why it shows real window chrome.
 
 ## Accessibility
 
