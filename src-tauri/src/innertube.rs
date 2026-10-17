@@ -297,12 +297,6 @@ pub async fn music_library() -> Result<LibraryStatus, String> {
     })
 }
 
-/// Whether the personal library can be reached, without fetching it.
-#[tauri::command]
-pub fn music_library_status() -> bool {
-    library_available()
-}
-
 /* -------------------------------------------------------------------------- */
 /* Parsing                                                                    */
 /* -------------------------------------------------------------------------- */

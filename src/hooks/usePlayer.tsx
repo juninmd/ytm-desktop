@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { PlayerState, RepeatMode, Track } from "../types";
 import { isDesktop } from "../lib/auth";
-import { resolveStream } from "../lib/music";
+import { resolveStream, resolverStatus } from "../lib/music";
 
 /**
  * The playback state machine, plus the audio sink.
@@ -238,6 +238,8 @@ export type PlayerApi = {
   upNext: Track[];
   /** Whether sound is real (`audio`) or the transport is running simulated. */
   engine: PlaybackEngine;
+  /** `null` while unknown; `false` when real audio is impossible (no yt-dlp). */
+  resolverAvailable: boolean | null;
   play: (queue: Track[], startIndex?: number) => void;
   toggle: () => void;
   next: () => void;
@@ -260,11 +262,27 @@ const TICK_MS = 250;
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [engine, setEngine] = useState<PlaybackEngine>("sim");
+  const [resolverAvailable, setResolverAvailable] = useState<boolean | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Latest state, readable from audio callbacks without re-subscribing.
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Ask once whether real audio is even possible on this machine, so the UI can
+  // say *why* the transport is simulated instead of just showing a badge.
+  useEffect(() => {
+    if (!isDesktop()) return;
+    let cancelled = false;
+    void resolverStatus()
+      .then((status) => {
+        if (!cancelled) setResolverAvailable(status.available);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const current = state.queue[state.order[state.cursor]] ?? null;
   const currentId = current?.id ?? null;
@@ -392,6 +410,101 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "seek", position: seconds });
   }, []);
 
+  // --- OS media integration (media keys, the system overlay) ---------------
+  // The sign-in screen promises background playback with native controls; this
+  // is what delivers it, via the Media Session API that Chromium/WebView2 expos.
+  const actionsRef = useRef({
+    toggle: () => dispatch({ type: "toggle" }),
+    next: () => dispatch({ type: "next", manual: true }),
+    previous: () => dispatch({ type: "previous" }),
+    seek,
+  });
+  actionsRef.current = {
+    toggle: () => dispatch({ type: "toggle" }),
+    next: () => dispatch({ type: "next", manual: true }),
+    previous: () => dispatch({ type: "previous" }),
+    seek,
+  };
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const session = navigator.mediaSession;
+    if (typeof MediaMetadata === "undefined") return;
+    session.metadata = current
+      ? new MediaMetadata({
+          title: current.title,
+          artist: current.artist,
+          album: current.album,
+          artwork: current.thumbnail ? [{ src: current.thumbnail }] : [],
+        })
+      : null;
+  }, [current]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const session = navigator.mediaSession;
+    const set = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try {
+        session.setActionHandler(action, handler);
+      } catch {
+        // Some handlers are not supported by every build; skip them.
+      }
+    };
+    const actions: MediaSessionAction[] = [
+      "play",
+      "pause",
+      "nexttrack",
+      "previoustrack",
+      "seekto",
+      "seekbackward",
+      "seekforward",
+    ];
+
+    set("play", () => {
+      if (!stateRef.current.isPlaying) actionsRef.current.toggle();
+    });
+    set("pause", () => {
+      if (stateRef.current.isPlaying) actionsRef.current.toggle();
+    });
+    set("nexttrack", () => actionsRef.current.next());
+    set("previoustrack", () => actionsRef.current.previous());
+    set("seekto", (details) => {
+      if (typeof details.seekTime === "number") actionsRef.current.seek(details.seekTime);
+    });
+    set("seekbackward", (details) =>
+      actionsRef.current.seek(stateRef.current.position - (details.seekOffset ?? 10)),
+    );
+    set("seekforward", (details) =>
+      actionsRef.current.seek(stateRef.current.position + (details.seekOffset ?? 10)),
+    );
+
+    return () => {
+      for (const action of actions) set(action, null);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    navigator.mediaSession.playbackState = state.isPlaying ? "playing" : "paused";
+  }, [state.isPlaying]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const session = navigator.mediaSession;
+    const duration = current?.duration ?? 0;
+    if (duration > 0 && Number.isFinite(state.position) && "setPositionState" in session) {
+      try {
+        session.setPositionState({
+          duration,
+          position: Math.min(Math.max(state.position, 0), duration),
+          playbackRate: 1,
+        });
+      } catch {
+        // Ignore an inconsistent position rather than throwing.
+      }
+    }
+  }, [current, state.position]);
+
   const api = useMemo<PlayerApi>(() => {
     const upNext = state.order
       .slice(state.cursor + 1)
@@ -402,6 +515,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       current,
       upNext,
       engine,
+      resolverAvailable,
       play,
       toggle: () => dispatch({ type: "toggle" }),
       next: () => dispatch({ type: "next", manual: true }),
@@ -415,7 +529,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       isLiked: (id) => state.liked.includes(id),
       isCurrent: (id) => (state.queue[state.order[state.cursor]]?.id ?? null) === id,
     };
-  }, [state, current, engine, play, seek]);
+  }, [state, current, engine, resolverAvailable, play, seek]);
 
   return <PlayerContext.Provider value={api}>{children}</PlayerContext.Provider>;
 }

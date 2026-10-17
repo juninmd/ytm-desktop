@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Clock3, Download, Heart, Loader2, MoreHorizontal, Play, Shuffle } from "lucide-react";
+import { Clock3, Download, Heart, Loader2, Play, Shuffle } from "lucide-react";
 import { useCatalog } from "../hooks/useCatalog";
 import { Cover } from "./Cover";
 import { TrackTable } from "./TrackTable";
@@ -148,11 +148,8 @@ export function CollectionView({ collection: initial }: { collection: Collection
         >
           <Heart className={cn("size-6", leadLiked && "fill-accent")} />
         </IconButton>
-        <IconButton label="Baixar" className="size-9">
+        <IconButton label="Baixar (em breve)" className="size-9" disabled>
           <Download className="size-6" />
-        </IconButton>
-        <IconButton label="Mais opções" className="size-9">
-          <MoreHorizontal className="size-6" />
         </IconButton>
       </div>
 

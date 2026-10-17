@@ -16,7 +16,6 @@
 //!
 //! Reference: <https://developers.google.com/identity/protocols/oauth2/limited-input-device>
 
-use std::collections::BTreeMap;
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -270,12 +269,6 @@ pub fn auth_clear_cookies() -> Result<(), String> {
     clear_cookie_header()
 }
 
-/// Whether a library cookie is stored. Never returns the value itself.
-#[tauri::command]
-pub fn auth_cookie_status() -> bool {
-    matches!(load_cookie_header(), Ok(Some(_)))
-}
-
 pub(crate) fn load_cookie_header() -> Result<Option<String>, String> {
     match cookie_entry()?.get_password() {
         Ok(cookie) => Ok(Some(cookie)),
@@ -298,27 +291,6 @@ fn clear_cookie_header() -> Result<(), String> {
 fn cookie_entry() -> Result<Entry, String> {
     Entry::new(KEYRING_SERVICE, KEYRING_COOKIE_ACCOUNT)
         .map_err(|error| format!("Cofre de credenciais do sistema indisponível: {error}"))
-}
-
-/// Signs a request the way the YouTube Music client does for the private
-/// InnerTube API: `SAPISIDHASH <seconds>_<sha1(seconds sapisid origin)>`.
-///
-/// Present so the wiring is visible and testable; unused by the OAuth path.
-#[tauri::command]
-pub fn auth_build_headers(
-    origin: String,
-    sapisid: String,
-    authorization: Option<String>,
-) -> BTreeMap<String, String> {
-    let mut headers = BTreeMap::new();
-    headers.insert(
-        "Authorization".to_string(),
-        authorization.unwrap_or_else(|| format!("SAPISIDHASH {}", sapisid_hash(&origin, &sapisid))),
-    );
-    headers.insert("Origin".to_string(), origin.clone());
-    headers.insert("X-Origin".to_string(), origin);
-    headers.insert("X-Goog-AuthUser".to_string(), "0".to_string());
-    headers
 }
 
 /* -------------------------------------------------------------------------- */
@@ -460,10 +432,6 @@ pub fn sapisid_hash_at(timestamp: u64, origin: &str, sapisid: &str) -> String {
     format!("{timestamp}_{}", hex::encode(hasher.finalize()))
 }
 
-fn sapisid_hash(origin: &str, sapisid: &str) -> String {
-    sapisid_hash_at(now(), origin, sapisid)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,46 +471,6 @@ mod tests {
         let form = refresh_form(&credentials, "refresh-token");
         assert!(form.contains(&("client_secret", "client-secret")));
         assert!(form.contains(&("grant_type", "refresh_token")));
-    }
-
-    #[test]
-    fn headers_carry_the_signed_authorization() {
-        let headers = auth_build_headers(
-            "https://music.youtube.com".to_string(),
-            "SAPISID-EXAMPLE".to_string(),
-            Some("SAPISIDHASH 1_abc".to_string()),
-        );
-
-        assert_eq!(
-            headers.get("Authorization").map(String::as_str),
-            Some("SAPISIDHASH 1_abc")
-        );
-        assert_eq!(
-            headers.get("X-Goog-AuthUser").map(String::as_str),
-            Some("0")
-        );
-        assert_eq!(
-            headers.get("Origin").map(String::as_str),
-            Some("https://music.youtube.com")
-        );
-    }
-
-    #[test]
-    fn headers_sign_when_no_authorization_is_supplied() {
-        let headers = auth_build_headers(
-            "https://music.youtube.com".to_string(),
-            "SAPISID-EXAMPLE".to_string(),
-            None,
-        );
-        let authorization = headers.get("Authorization").expect("signed");
-        let digest = authorization
-            .strip_prefix("SAPISIDHASH ")
-            .expect("carries the scheme");
-        let (seconds, hash) = digest.split_once('_').expect("is timestamp_digest");
-
-        assert!(seconds.parse::<u64>().is_ok());
-        assert_eq!(hash.len(), 40);
-        assert!(hash.chars().all(|character| character.is_ascii_hexdigit()));
     }
 
     #[test]
