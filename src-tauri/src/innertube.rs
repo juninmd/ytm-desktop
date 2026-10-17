@@ -872,6 +872,26 @@ mod tests {
         assert_eq!(page.collections[0].track_ids.len(), 2);
     }
 
+    // Regression guard: the parser used to scan the whole token list, so a
+    // title that looks like a clock (`4:40`) or a page type (`Album`) was
+    // mistaken for the duration / result type. Only the body is scanned now.
+    #[test]
+    fn a_clock_shaped_title_is_not_read_as_the_duration() {
+        let item = serde_json::from_str(CLOCK_TITLED_SONG).unwrap();
+        let track = list_track(&item, "", "", None).expect("a track");
+
+        assert_eq!(track.title, "4:40");
+        assert_eq!(track.duration, 190.0); // 3:10 from the body, never 4:40
+        assert_eq!(track.artist, "Daft Punk");
+
+        // A title equal to a page type must not make this a collection.
+        let payload = serde_json::from_str(TYPE_TITLED_SONG).unwrap();
+        let page = parse_page(&payload, None);
+        assert_eq!(page.collections.len(), 0);
+        assert_eq!(page.tracks.len(), 1);
+        assert_eq!(page.tracks[0].artist, "Some Artist");
+    }
+
     #[test]
     fn home_reads_quick_picks_off_the_carousel() {
         let payload = serde_json::from_str(HOME_PAGE).unwrap();
@@ -935,6 +955,29 @@ mod tests {
         { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
           { "text": "110M plays" } ] } } }
       ]
+    }"#;
+
+    const CLOCK_TITLED_SONG: &str = r#"{
+      "overlay": { "musicItemThumbnailOverlayRenderer": { "content": { "musicPlayButtonRenderer": {
+        "playNavigationEndpoint": { "watchEndpoint": { "videoId": "aaaa1111bbb" } },
+        "accessibilityPlayData": { "accessibilityData": { "label": "Play 4:40 - Daft Punk" } } } } } },
+      "flexColumns": [
+        { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [ { "text": "4:40" } ] } } },
+        { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
+          { "text": "Song" }, { "text": " • " }, { "text": "Daft Punk" }, { "text": " • " }, { "text": "3:10" } ] } } }
+      ]
+    }"#;
+
+    const TYPE_TITLED_SONG: &str = r#"{
+      "contents": { "musicResponsiveListItemRenderer": {
+        "overlay": { "musicItemThumbnailOverlayRenderer": { "content": { "musicPlayButtonRenderer": {
+          "playNavigationEndpoint": { "watchEndpoint": { "videoId": "cccc2222ddd" } },
+          "accessibilityPlayData": { "accessibilityData": { "label": "Play Album - Some Artist" } } } } } },
+        "flexColumns": [
+          { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [ { "text": "Album" } ] } } },
+          { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
+            { "text": "Song" }, { "text": " • " }, { "text": "Some Artist" }, { "text": " • " }, { "text": "2:00" } ] } } }
+        ] } }
     }"#;
 
     const SEARCH_PAGE: &str = r#"{
