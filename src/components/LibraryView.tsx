@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { albums, collections, playlists } from "../data/catalog";
+import { useCatalog } from "../hooks/useCatalog";
 import { CollectionCard } from "./CollectionCard";
+import { LibraryCookieForm } from "./LibraryCookieForm";
 import { cn } from "../lib/cn";
-import type { Collection } from "../data/catalog";
+import type { Collection } from "../types";
 
 type Filter = "all" | "playlists" | "albums";
 
@@ -14,11 +15,24 @@ const FILTERS: { id: Filter; label: string }[] = [
 
 export function LibraryView({ onOpen }: { onOpen: (collection: Collection) => void }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const { libraryCollections, libraryAvailable, source } = useCatalog();
 
-  const visible = collections.filter((collection) => {
+  const visible = libraryCollections.filter((collection) => {
     if (filter === "all") return true;
     return filter === "playlists" ? collection.kind === "playlist" : collection.kind === "album";
   });
+
+  if (source === "ytmusic" && !libraryAvailable) {
+    return (
+      <div className="px-6 pb-10">
+        <h1 className="pt-2 text-2xl font-bold tracking-tight">Sua biblioteca</h1>
+        <LibraryCookieForm />
+      </div>
+    );
+  }
+
+  const playlists = libraryCollections.filter((collection) => collection.kind === "playlist");
+  const albums = libraryCollections.filter((collection) => collection.kind === "album");
 
   return (
     <div className="px-6 pb-10">
@@ -46,11 +60,15 @@ export function LibraryView({ onOpen }: { onOpen: (collection: Collection) => vo
         ))}
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
-        {visible.map((collection) => (
-          <CollectionCard key={collection.id} collection={collection} onOpen={onOpen} />
-        ))}
-      </div>
+      {visible.length === 0 ? (
+        <p className="mt-8 text-sm text-muted">Nada nesta categoria ainda.</p>
+      ) : (
+        <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+          {visible.map((collection) => (
+            <CollectionCard key={collection.id} collection={collection} onOpen={onOpen} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { Compass, Heart, Home, Library, LogOut, Music2, Plus, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { albums, getPlaylist, playlists } from "../data/catalog";
+import { useCatalog } from "../hooks/useCatalog";
 import { Cover } from "./Cover";
 import { IconButton } from "./ui/IconButton";
 import { Logo } from "./ui/Logo";
@@ -16,7 +16,12 @@ type Props = {
 };
 
 export function Sidebar({ view, onNavigate, session, onSignOut }: Props) {
-  const liked = getPlaylist("curtidas");
+  const { libraryCollections, likedId, source } = useCatalog();
+  const liked = likedId ? libraryCollections.find((item) => item.id === likedId) : undefined;
+  const playlists = libraryCollections.filter(
+    (collection) => collection.kind === "playlist" && collection.id !== likedId,
+  );
+  const albums = libraryCollections.filter((collection) => collection.kind === "album");
   const nav: { label: string; icon: LucideIcon; target: View; active: boolean }[] = [
     { label: "Início", icon: Home, target: { kind: "home" }, active: view.kind === "home" },
     { label: "Explorar", icon: Compass, target: { kind: "library" }, active: false },
@@ -78,33 +83,40 @@ export function Sidebar({ view, onNavigate, session, onSignOut }: Props) {
               subtitle={`Playlist · ${liked.trackIds.length} faixas`}
               active={view.kind === "playlist" && view.id === liked.id}
               accent
+              src={liked.thumbnail}
               onClick={() => onNavigate({ kind: "playlist", id: liked.id })}
             />
           )}
 
-          {playlists
-            .filter((playlist) => playlist.id !== "curtidas")
-            .map((playlist) => (
-              <LibraryRow
-                key={playlist.id}
-                seed={playlist.id}
-                title={playlist.title}
-                subtitle={`Playlist · ${playlist.trackIds.length} faixas`}
-                active={view.kind === "playlist" && view.id === playlist.id}
-                onClick={() => onNavigate({ kind: "playlist", id: playlist.id })}
-              />
-            ))}
+          {playlists.map((playlist) => (
+            <LibraryRow
+              key={playlist.id}
+              seed={playlist.id}
+              title={playlist.title}
+              subtitle={`Playlist · ${playlist.trackIds.length || "?"} faixas`}
+              active={view.kind === "playlist" && view.id === playlist.id}
+              src={playlist.thumbnail}
+              onClick={() => onNavigate({ kind: "playlist", id: playlist.id })}
+            />
+          ))}
 
           {albums.map((album) => (
             <LibraryRow
               key={album.id}
               seed={album.id}
               title={album.title}
-              subtitle={`${album.kind === "album" ? "Álbum" : album.kind === "ep" ? "EP" : "Single"} · ${album.artist}`}
+              subtitle={album.subtitle || "Álbum"}
               active={view.kind === "album" && view.id === album.id}
+              src={album.thumbnail}
               onClick={() => onNavigate({ kind: "album", id: album.id })}
             />
           ))}
+
+          {source === "ytmusic" && libraryCollections.length === 0 && (
+            <p className="px-3 py-2 text-xs text-subtle">
+              Conecte o cookie em Biblioteca para ver suas playlists.
+            </p>
+          )}
         </div>
 
         <footer className="border-t border-line p-2">
@@ -132,6 +144,7 @@ function LibraryRow({
   subtitle,
   active,
   accent = false,
+  src,
   onClick,
 }: {
   seed: string;
@@ -139,6 +152,7 @@ function LibraryRow({
   subtitle: string;
   active: boolean;
   accent?: boolean;
+  src?: string;
   onClick: () => void;
 }) {
   return (
@@ -155,7 +169,7 @@ function LibraryRow({
           <Heart className="size-4 fill-white text-white" />
         </span>
       ) : (
-        <Cover seed={seed} title={title} className="size-10" />
+        <Cover seed={seed} title={title} src={src} className="size-10" />
       )}
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium">{title}</span>

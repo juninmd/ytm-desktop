@@ -56,6 +56,7 @@ pub struct Collection {
     pub description: Option<String>,
     pub year: Option<u32>,
     pub track_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thumbnail: Option<String>,
 }
 
@@ -63,6 +64,7 @@ pub struct Collection {
 #[serde(rename_all = "camelCase")]
 pub struct Shelf {
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub subtitle: Option<String>,
     pub ids: Vec<String>,
 }
@@ -89,7 +91,7 @@ pub struct CatalogPage {
 #[serde(rename_all = "camelCase")]
 pub struct LibraryStatus {
     pub available: bool,
-    pub playlists: Vec<Collection>,
+    pub collections: Vec<Collection>,
     pub tracks: Vec<Track>,
 }
 
@@ -139,7 +141,9 @@ pub fn library_available() -> bool {
 }
 
 async fn post(endpoint: &str, body: Value) -> Result<Value, String> {
-    let mut request = auth::http().post(format!("{ENDPOINT}{endpoint}")).json(&body);
+    let mut request = auth::http()
+        .post(format!("{ENDPOINT}{endpoint}"))
+        .json(&body);
     for (name, value) in origin_headers() {
         request = request.header(name, value);
     }
@@ -156,9 +160,7 @@ async fn post(endpoint: &str, body: Value) -> Result<Value, String> {
         .map_err(|error| format!("Resposta inesperada do YouTube Music ({status}): {error}"))?;
 
     if !status.is_success() {
-        return Err(format!(
-            "O YouTube Music recusou a solicitação ({status})."
-        ));
+        return Err(format!("O YouTube Music recusou a solicitação ({status})."));
     }
 
     Ok(payload)
@@ -171,18 +173,18 @@ async fn post(endpoint: &str, body: Value) -> Result<Value, String> {
 /// The signed-in (or anonymous) home feed.
 #[tauri::command]
 pub async fn music_home() -> Result<HomeData, String> {
-    let payload = post("browse", json!({ "context": context(), "browseId": "FEmusic_home" })).await?;
+    let payload = post(
+        "browse",
+        json!({ "context": context(), "browseId": "FEmusic_home" }),
+    )
+    .await?;
     Ok(parse_home(&payload))
 }
 
 /// Real catalogue search.
 #[tauri::command]
 pub async fn music_search(query: String) -> Result<CatalogPage, String> {
-    let payload = post(
-        "search",
-        json!({ "context": context(), "query": query, "params": "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D" }),
-    )
-    .await?;
+    let payload = post("search", json!({ "context": context(), "query": query })).await?;
     Ok(parse_page(&payload, None))
 }
 
@@ -190,10 +192,22 @@ pub async fn music_search(query: String) -> Result<CatalogPage, String> {
 #[tauri::command]
 pub async fn music_browse(id: String) -> Result<CatalogPage, String> {
     let browse_id = normalise_browse_id(&id);
-    let payload = post("browse", json!({ "context": context(), "browseId": browse_id })).await?;
+    let payload = post(
+        "browse",
+        json!({ "context": context(), "browseId": browse_id }),
+    )
+    .await?;
 
     let (title, subtitle, kind) = microformat(&payload);
-    let mut page = parse_page(&payload, Some((title, subtitle, kind)));
+    let mut page = parse_page(&payload, Some((title.clone(), subtitle, kind)));
+    for track in &mut page.tracks {
+        if track.album.is_empty() {
+            track.album = title.clone();
+        }
+        if track.album_id.is_empty() {
+            track.album_id = id.clone();
+        }
+    }
     if let Some(collection) = page.collections.first_mut() {
         collection.id = id;
     }
@@ -206,7 +220,7 @@ pub async fn music_library() -> Result<LibraryStatus, String> {
     if !library_available() {
         return Ok(LibraryStatus {
             available: false,
-            playlists: Vec::new(),
+            collections: Vec::new(),
             tracks: Vec::new(),
         });
     }
@@ -230,9 +244,55 @@ pub async fn music_library() -> Result<LibraryStatus, String> {
         }
     }
 
+    // Saved albums live behind a different browse id.
+    if let Ok(albums) = post(
+        "browse",
+        json!({ "context": context(), "browseId": "FEmusic_liked_albums" }),
+    )
+    .await
+    {
+        for item in collect(&albums, "musicTwoRowItemRenderer") {
+            if let Some(collection) = two_row_collection(item) {
+                collections.push(collection);
+            }
+        }
+    }
+
+    // Liked songs are their own playlist ("VLLM").
+    if let Ok(liked) = post(
+        "browse",
+        json!({ "context": context(), "browseId": "VLLM" }),
+    )
+    .await
+    {
+        let mut liked_tracks = Vec::new();
+        for item in collect(&liked, "musicResponsiveListItemRenderer") {
+            if let Some(track) = list_track(item, "Músicas curtidas", "VLLM", None) {
+                liked_tracks.push(track);
+            }
+        }
+        if !liked_tracks.is_empty() {
+            collections.push(Collection {
+                id: "VLLM".to_string(),
+                kind: "playlist".to_string(),
+                format: "playlist".to_string(),
+                title: "Músicas curtidas".to_string(),
+                subtitle: "YouTube Music".to_string(),
+                description: None,
+                year: None,
+                track_ids: liked_tracks.iter().map(|track| track.id.clone()).collect(),
+                thumbnail: best_thumbnail(&liked),
+            });
+            tracks.extend(liked_tracks);
+        }
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    collections.retain(|collection| seen.insert(collection.id.clone()));
+
     Ok(LibraryStatus {
         available: true,
-        playlists: collections,
+        collections,
         tracks,
     })
 }
@@ -314,35 +374,31 @@ fn clock(value: &str) -> Option<f64> {
 }
 
 const PAGE_TYPES: [&str; 8] = [
-    "Song",
-    "Video",
-    "Album",
-    "Playlist",
-    "Artist",
-    "Episode",
-    "Podcast",
-    "Profile",
+    "Song", "Video", "Album", "Playlist", "Artist", "Episode", "Podcast", "Profile",
 ];
 
 /// Every text run in a list item, in order, with the ` • ` separators dropped.
 fn tokens(item: &Value) -> Vec<String> {
     let mut out = Vec::new();
     for column_key in ["flexColumns", "fixedColumns"] {
-        if let Some(columns) = item.get(column_key).and_then(Value::as_array) {
-            for column in columns {
-                if let Some(text) = column
-                    .get("musicResponsiveListItemFlexColumnRenderer")
-                    .and_then(|renderer| renderer.get("text"))
-                {
-                    if let Some(runs) = text.get("runs").and_then(Value::as_array) {
-                        for run in runs {
-                            if let Some(value) = run.get("text").and_then(Value::as_str) {
-                                let trimmed = value.trim();
-                                if !trimmed.is_empty() && trimmed != "•" {
-                                    out.push(trimmed.to_string());
-                                }
-                            }
-                        }
+        let Some(columns) = item.get(column_key).and_then(Value::as_array) else {
+            continue;
+        };
+        for column in columns {
+            let Some(text) = column
+                .get("musicResponsiveListItemFlexColumnRenderer")
+                .and_then(|renderer| renderer.get("text"))
+            else {
+                continue;
+            };
+            let Some(runs) = text.get("runs").and_then(Value::as_array) else {
+                continue;
+            };
+            for run in runs {
+                if let Some(value) = run.get("text").and_then(Value::as_str) {
+                    let trimmed = value.trim();
+                    if !trimmed.is_empty() && trimmed != "•" {
+                        out.push(trimmed.to_string());
                     }
                 }
             }
@@ -432,6 +488,9 @@ fn list_track(
 ) -> Option<Track> {
     let id = video_id(item)?;
     let all = tokens(item);
+    // `tokens` starts with the title; scan the body only so a title that looks
+    // like "4:40" or "Song" cannot be mistaken for the clock or the type.
+    let body = all.get(1..).unwrap_or(&[]);
 
     let column_title = item
         .get("flexColumns")
@@ -443,11 +502,15 @@ fn list_track(
 
     let (label_title, label_artist) = accessibility_title_artist(item).unzip();
 
-    let title = column_title.or(label_title).unwrap_or_else(|| "Faixa desconhecida".to_string());
+    let title = column_title
+        .or(label_title)
+        .unwrap_or_else(|| "Faixa desconhecida".to_string());
 
-    let page_type = all.iter().find(|token| PAGE_TYPES.contains(&token.as_str()));
-    let duration = all.iter().find_map(|token| clock(token)).unwrap_or(0.0);
-    let plays = all
+    let page_type = body
+        .iter()
+        .find(|token| PAGE_TYPES.contains(&token.as_str()));
+    let duration = body.iter().find_map(|token| clock(token)).unwrap_or(0.0);
+    let plays = body
         .iter()
         .find(|token| {
             token.ends_with("plays") || token.ends_with("views") || token.ends_with("ouvintes")
@@ -559,7 +622,11 @@ fn parse_page(payload: &Value, header: Option<(String, String, String)>) -> Cata
 
     for item in collect(payload, "musicResponsiveListItemRenderer") {
         let all = tokens(item);
-        let page_type = all.iter().find(|token| PAGE_TYPES.contains(&token.as_str()));
+        // Skip the title token so it cannot be read as the page type.
+        let body = all.get(1..).unwrap_or(&[]);
+        let page_type = body
+            .iter()
+            .find(|token| PAGE_TYPES.contains(&token.as_str()));
 
         match page_type.map(String::as_str) {
             Some("Album") | Some("Playlist") => {
@@ -569,12 +636,9 @@ fn parse_page(payload: &Value, header: Option<(String, String, String)>) -> Cata
             }
             Some("Artist") | Some("Podcast") | Some("Profile") | Some("Episode") => {}
             _ => {
-                if let Some(track) = list_track(
-                    item,
-                    &album_title,
-                    &album_id,
-                    album_thumb.as_deref(),
-                ) {
+                if let Some(track) =
+                    list_track(item, &album_title, &album_id, album_thumb.as_deref())
+                {
                     tracks.push(track);
                 }
             }
@@ -597,7 +661,11 @@ fn parse_page(payload: &Value, header: Option<(String, String, String)>) -> Cata
             0,
             Collection {
                 id: String::new(),
-                kind: if format == "playlist" { "playlist".to_string() } else { "album".to_string() },
+                kind: if format == "playlist" {
+                    "playlist".to_string()
+                } else {
+                    "album".to_string()
+                },
                 format,
                 title,
                 subtitle,
@@ -609,7 +677,10 @@ fn parse_page(payload: &Value, header: Option<(String, String, String)>) -> Cata
         );
     }
 
-    CatalogPage { collections, tracks }
+    CatalogPage {
+        collections,
+        tracks,
+    }
 }
 
 /// Collection card from a search/list item (`Album` / `Playlist` rows).
@@ -623,7 +694,8 @@ fn list_collection(item: &Value) -> Option<Collection> {
         .map(text_of)?;
 
     let all = tokens(item);
-    let page_type = all
+    let body = all.get(1..).unwrap_or(&[]);
+    let page_type = body
         .iter()
         .find(|token| PAGE_TYPES.contains(&token.as_str()))
         .cloned()
@@ -636,7 +708,11 @@ fn list_collection(item: &Value) -> Option<Collection> {
         .cloned()
         .unwrap_or_default();
 
-    let kind = if page_type == "Album" { "album" } else { "playlist" };
+    let kind = if page_type == "Album" {
+        "album"
+    } else {
+        "playlist"
+    };
 
     Some(Collection {
         id,
@@ -654,6 +730,7 @@ fn list_collection(item: &Value) -> Option<Collection> {
 fn parse_home(payload: &Value) -> HomeData {
     let mut collections: Vec<Collection> = Vec::new();
     let mut shelves: Vec<Shelf> = Vec::new();
+
     for carousel in collect(payload, "musicCarouselShelfRenderer") {
         let title = carousel
             .get("header")
@@ -673,7 +750,11 @@ fn parse_home(payload: &Value) -> HomeData {
             }
         }
         if !ids.is_empty() {
-            shelves.push(Shelf { title, subtitle: None, ids });
+            shelves.push(Shelf {
+                title,
+                subtitle: None,
+                ids,
+            });
         }
     }
 
@@ -688,27 +769,18 @@ fn parse_home(payload: &Value) -> HomeData {
                 .unwrap_or_default()
         });
 
-    let mut tracks = Vec::new();
-    for item in collect(payload, "musicResponsiveListItemRenderer") {
-        if let Some(track) = list_track(item, "", "", None) {
-            tracks.push(track);
-        }
-    }
-
-    let mut tracks = Vec::new();
-    for item in collect(payload, "musicResponsiveListItemRenderer") {
-        if let Some(track) = list_track(item, "", "", None) {
-            tracks.push(track);
-        }
-    }
-
     dedupe(&mut collections);
-    HomeData { quick_picks, shelves, collections }
+    HomeData {
+        quick_picks,
+        shelves,
+        collections,
+    }
 }
 
 fn dedupe(collections: &mut Vec<Collection>) {
     let mut seen = std::collections::HashSet::new();
-    collections.retain(|collection| !collection.id.is_empty() && seen.insert(collection.id.clone()));
+    collections
+        .retain(|collection| !collection.id.is_empty() && seen.insert(collection.id.clone()));
 }
 
 /// `PL…` → `VLPL…` (a bare playlist id is not a valid browse id).
@@ -747,7 +819,10 @@ mod tests {
     #[test]
     fn extract_cookie_picks_the_named_pair() {
         let cookie = "VISITOR=abc; SAPISID=xyz-123; HSID=1|2";
-        assert_eq!(extract_cookie(cookie, "SAPISID").as_deref(), Some("xyz-123"));
+        assert_eq!(
+            extract_cookie(cookie, "SAPISID").as_deref(),
+            Some("xyz-123")
+        );
         assert_eq!(extract_cookie(cookie, "NOPE"), None);
     }
 
@@ -797,13 +872,71 @@ mod tests {
         assert_eq!(page.collections[0].track_ids.len(), 2);
     }
 
+    // Regression guard: the parser used to scan the whole token list, so a
+    // title that looks like a clock (`4:40`) or a page type (`Album`) was
+    // mistaken for the duration / result type. Only the body is scanned now.
+    #[test]
+    fn a_clock_shaped_title_is_not_read_as_the_duration() {
+        let item = serde_json::from_str(CLOCK_TITLED_SONG).unwrap();
+        let track = list_track(&item, "", "", None).expect("a track");
+
+        assert_eq!(track.title, "4:40");
+        assert_eq!(track.duration, 190.0); // 3:10 from the body, never 4:40
+        assert_eq!(track.artist, "Daft Punk");
+
+        // A title equal to a page type must not make this a collection.
+        let payload = serde_json::from_str(TYPE_TITLED_SONG).unwrap();
+        let page = parse_page(&payload, None);
+        assert_eq!(page.collections.len(), 0);
+        assert_eq!(page.tracks.len(), 1);
+        assert_eq!(page.tracks[0].artist, "Some Artist");
+    }
+
     #[test]
     fn home_reads_quick_picks_off_the_carousel() {
         let payload = serde_json::from_str(HOME_PAGE).unwrap();
         let home = parse_home(&payload);
 
-        assert_eq!(home.quick_picks, vec!["VLPLGRY1G015gD0Wn9cQuJqHwyrikKyPb7dZ"]);
+        assert_eq!(
+            home.quick_picks,
+            vec!["VLPLGRY1G015gD0Wn9cQuJqHwyrikKyPb7dZ"]
+        );
         assert_eq!(home.shelves[0].title, "Quick picks");
+    }
+
+    /// Hits the real InnerTube API. Opt-in (`YTM_LIVE=1`) so CI stays offline and
+    /// deterministic; run it locally to confirm the parser still matches reality
+    /// when YouTube changes a response shape.
+    #[test]
+    fn live_endpoints_match_the_parser() {
+        if std::env::var("YTM_LIVE").is_err() {
+            return;
+        }
+
+        let search = tauri::async_runtime::block_on(music_search("daft punk".to_string()))
+            .expect("live search");
+        assert!(!search.tracks.is_empty(), "search returned no tracks");
+        assert!(
+            search.collections.iter().any(|c| c.kind == "album"),
+            "search returned no albums"
+        );
+        let first = &search.tracks[0];
+        assert!(!first.id.is_empty() && !first.title.is_empty());
+
+        let album = search
+            .collections
+            .iter()
+            .find(|c| c.kind == "album")
+            .unwrap()
+            .id
+            .clone();
+        let page = tauri::async_runtime::block_on(music_browse(album.clone())).expect("browse");
+        assert_eq!(page.collections[0].id, album);
+        assert!(!page.tracks.is_empty(), "album had no tracks");
+        assert!(page.tracks.iter().all(|t| t.album_id == album));
+
+        let home = tauri::async_runtime::block_on(music_home()).expect("home");
+        assert!(!home.shelves.is_empty(), "home returned no shelves");
     }
 
     // --- fixtures: real responses, trimmed to the fields the parser reads ---
@@ -822,6 +955,29 @@ mod tests {
         { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
           { "text": "110M plays" } ] } } }
       ]
+    }"#;
+
+    const CLOCK_TITLED_SONG: &str = r#"{
+      "overlay": { "musicItemThumbnailOverlayRenderer": { "content": { "musicPlayButtonRenderer": {
+        "playNavigationEndpoint": { "watchEndpoint": { "videoId": "aaaa1111bbb" } },
+        "accessibilityPlayData": { "accessibilityData": { "label": "Play 4:40 - Daft Punk" } } } } } },
+      "flexColumns": [
+        { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [ { "text": "4:40" } ] } } },
+        { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
+          { "text": "Song" }, { "text": " • " }, { "text": "Daft Punk" }, { "text": " • " }, { "text": "3:10" } ] } } }
+      ]
+    }"#;
+
+    const TYPE_TITLED_SONG: &str = r#"{
+      "contents": { "musicResponsiveListItemRenderer": {
+        "overlay": { "musicItemThumbnailOverlayRenderer": { "content": { "musicPlayButtonRenderer": {
+          "playNavigationEndpoint": { "watchEndpoint": { "videoId": "cccc2222ddd" } },
+          "accessibilityPlayData": { "accessibilityData": { "label": "Play Album - Some Artist" } } } } } },
+        "flexColumns": [
+          { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [ { "text": "Album" } ] } } },
+          { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
+            { "text": "Song" }, { "text": " • " }, { "text": "Some Artist" }, { "text": " • " }, { "text": "2:00" } ] } } }
+        ] } }
     }"#;
 
     const SEARCH_PAGE: &str = r#"{

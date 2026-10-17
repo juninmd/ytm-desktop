@@ -9,10 +9,22 @@ import { Sidebar } from "./components/Sidebar";
 import { SignInScreen } from "./components/SignInScreen";
 import { TopBar } from "./components/TopBar";
 import { Logo } from "./components/ui/Logo";
-import { getCollection, type Collection } from "./data/catalog";
+import { CatalogProvider, useCatalog } from "./hooks/useCatalog";
 import { useAuth } from "./hooks/useAuth";
 import { PlayerProvider, usePlayer } from "./hooks/usePlayer";
-import type { View } from "./types";
+import type { Collection, View } from "./types";
+
+/** A placeholder for a collection the store has not indexed yet, keyed by id. */
+function STUB_COLLECTION(id: string, kind: "album" | "playlist"): Collection {
+  return {
+    id,
+    kind,
+    format: kind === "album" ? "album" : "playlist",
+    title: "",
+    subtitle: "",
+    trackIds: [],
+  };
+}
 
 export default function App() {
   return (
@@ -36,7 +48,11 @@ function Shell() {
 
   if (!auth.session) return <SignInScreen auth={auth} />;
 
-  return <Workspace session={auth.session} onSignOut={() => void auth.leave()} />;
+  return (
+    <CatalogProvider>
+      <Workspace session={auth.session} onSignOut={() => void auth.leave()} />
+    </CatalogProvider>
+  );
 }
 
 function Workspace({
@@ -47,6 +63,7 @@ function Workspace({
   onSignOut: () => void;
 }) {
   const player = usePlayer();
+  const { getCollection } = useCatalog();
   const [view, setView] = useState<View>({ kind: "home" });
   const [history, setHistory] = useState<View[]>([]);
   const [query, setQuery] = useState("");
@@ -138,6 +155,10 @@ function Workspace({
     content = <LibraryView onOpen={openCollection} />;
   } else if (collection) {
     content = <CollectionView collection={collection} />;
+  } else if (view.kind === "album" || view.kind === "playlist") {
+    // A just-opened collection that the store has not indexed yet. The view
+    // resolves it from the id itself.
+    content = <CollectionView collection={STUB_COLLECTION(view.id, view.kind)} />;
   } else {
     content = <HomeView onOpen={openCollection} />;
   }

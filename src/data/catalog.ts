@@ -1,4 +1,4 @@
-import type { Album, Playlist, Track } from "../types";
+import type { Album, Collection, Playlist, Track } from "../types";
 
 /**
  * Mock catalogue. Invented artists and releases — no real catalogue data is
@@ -207,16 +207,7 @@ export const playlists: Playlist[] = [
 export const getPlaylist = (id: string) => playlists.find((playlist) => playlist.id === id);
 
 /** A unified shape for anything that can be opened and played as a whole. */
-export type Collection = {
-  id: string;
-  kind: "album" | "playlist";
-  format: "album" | "ep" | "single" | "playlist";
-  title: string;
-  subtitle: string;
-  description?: string;
-  year?: number;
-  trackIds: string[];
-};
+export type { Collection };
 
 export const collections: Collection[] = [
   ...albums.map((album) => ({

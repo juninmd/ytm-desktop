@@ -43,18 +43,18 @@ pub struct ResolverStatus {
 fn candidates() -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
-    if let Ok(explicit) = std::env::var("YTM_YTDLP") {
-        if !explicit.is_empty() {
-            paths.push(PathBuf::from(explicit));
-        }
+    if let Ok(explicit) = std::env::var("YTM_YTDLP")
+        && !explicit.is_empty()
+    {
+        paths.push(PathBuf::from(explicit));
     }
 
     // Beside the running executable (a bundled sidecar).
-    if let Ok(current) = std::env::current_exe() {
-        if let Some(directory) = current.parent() {
-            paths.push(directory.join("yt-dlp.exe"));
-            paths.push(directory.join("yt-dlp"));
-        }
+    if let Ok(current) = std::env::current_exe()
+        && let Some(directory) = current.parent()
+    {
+        paths.push(directory.join("yt-dlp.exe"));
+        paths.push(directory.join("yt-dlp"));
     }
 
     paths
@@ -82,7 +82,9 @@ fn find_ytdlp() -> Option<PathBuf> {
     None
 }
 
-#[tauri::command]
+/// Whether a resolver binary is available. `async` so the `--version` probe
+/// that locates it never runs on the UI thread.
+#[tauri::command(async)]
 pub fn music_resolver_status() -> ResolverStatus {
     match find_ytdlp() {
         Some(binary) => ResolverStatus {
@@ -103,10 +105,15 @@ pub fn music_resolver_status() -> ResolverStatus {
 }
 
 /// Resolves a `videoId` to a directly playable audio url.
-#[tauri::command]
+///
+/// `async` (via `async_runtime`) because it blocks on a `yt-dlp` child process:
+/// a synchronous command would stall the webview's event loop for the length of
+/// the extraction.
+#[tauri::command(async)]
 pub fn music_stream(track_id: String) -> Result<StreamInfo, String> {
-    let binary = find_ytdlp()
-        .ok_or_else(|| "yt-dlp não encontrado, então o áudio real não pode ser resolvido.".to_string())?;
+    let binary = find_ytdlp().ok_or_else(|| {
+        "yt-dlp não encontrado, então o áudio real não pode ser resolvido.".to_string()
+    })?;
 
     let output = Command::new(&binary)
         .args([
@@ -169,6 +176,22 @@ mod tests {
                 None => std::env::remove_var("YTM_YTDLP"),
             }
         }
-        assert_eq!(list.first().map(|path| path.to_string_lossy().into_owned()), Some("/custom/yt-dlp".to_string()));
+        assert_eq!(
+            list.first().map(|path| path.to_string_lossy().into_owned()),
+            Some("/custom/yt-dlp".to_string())
+        );
+    }
+
+    /// Opt-in live check (`YTM_LIVE=1`): resolves a real audio url via yt-dlp.
+    #[test]
+    fn live_resolver_returns_a_playable_url() {
+        if std::env::var("YTM_LIVE").is_err() {
+            return;
+        }
+        let info = music_stream("uSFXOBaqiR8".to_string()).expect("yt-dlp resolves audio");
+        assert!(info.url.starts_with("http"));
+        assert_eq!(info.track_id, "uSFXOBaqiR8");
+        assert!(!info.ext.is_empty());
+        assert!(info.url.contains("googlevideo.com"));
     }
 }

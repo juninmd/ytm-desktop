@@ -1,5 +1,6 @@
-import { Clock3, Download, Heart, MoreHorizontal, Play, Shuffle } from "lucide-react";
-import { resolveTracks, type Collection } from "../data/catalog";
+import { useEffect, useRef, useState } from "react";
+import { Clock3, Download, Heart, Loader2, MoreHorizontal, Play, Shuffle } from "lucide-react";
+import { useCatalog } from "../hooks/useCatalog";
 import { Cover } from "./Cover";
 import { TrackTable } from "./TrackTable";
 import { IconButton } from "./ui/IconButton";
@@ -8,6 +9,7 @@ import { usePlayer } from "../hooks/usePlayer";
 import { heroStyle } from "../lib/cover";
 import { cn } from "../lib/cn";
 import { formatRuntime, pluralize } from "../lib/format";
+import type { Collection } from "../types";
 
 const FORMAT_LABEL: Record<Collection["format"], string> = {
   album: "Álbum",
@@ -16,10 +18,68 @@ const FORMAT_LABEL: Record<Collection["format"], string> = {
   playlist: "Playlist",
 };
 
-export function CollectionView({ collection }: { collection: Collection }) {
+export function CollectionView({ collection: initial }: { collection: Collection }) {
   const playCollection = usePlayCollection();
+  const { resolveTracks, ensureCollection, getCollection } = useCatalog();
   const { state, toggleShuffle, isLiked, toggleLike } = usePlayer();
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  /** Guards against re-fetching as the store's callbacks change identity. */
+  const attempted = useRef<string | null>(null);
+
+  // Home shelves only hand over a card; the track list is loaded on open.
+  const stored = getCollection(initial.id);
+  const collection = stored ?? initial;
   const tracks = resolveTracks(collection.trackIds);
+  const needsLoading = !stored || stored.trackIds.length === 0;
+
+  useEffect(() => {
+    if (!needsLoading || attempted.current === initial.id) return;
+    attempted.current = initial.id;
+    let cancelled = false;
+    setLoading(true);
+    setFailed(false);
+    ensureCollection(initial.id)
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initial.id, needsLoading, ensureCollection, attempt]);
+
+  const retry = () => {
+    attempted.current = null;
+    setAttempt((value) => value + 1);
+  };
+
+  if (!stored) {
+    if (loading) {
+      return (
+        <div className="grid place-items-center py-24">
+          <Loader2 className="size-6 animate-spin text-muted" />
+        </div>
+      );
+    }
+    if (!failed) return null;
+    return (
+      <div className="grid place-items-center px-6 py-24 text-center">
+        <p className="text-lg font-semibold">Não foi possível abrir esta coleção</p>
+        <p className="mt-1 text-sm text-muted">Verifique a conexão e tente de novo.</p>
+        <button
+          type="button"
+          onClick={retry}
+          className="mt-5 rounded-full border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
+        >
+          Tentar de novo
+        </button>
+      </div>
+    );
+  }
 
   const lead = tracks[0];
   const leadLiked = lead ? isLiked(lead.id) : false;
@@ -35,6 +95,7 @@ export function CollectionView({ collection }: { collection: Collection }) {
           <Cover
             seed={collection.id}
             title={collection.title}
+            src={collection.thumbnail}
             className="size-[188px] rounded-lg shadow-[0_24px_60px_rgb(0_0_0/0.55)]"
           />
           <div className="min-w-0 pb-1">
@@ -53,11 +114,15 @@ export function CollectionView({ collection }: { collection: Collection }) {
               {collection.year && <span>{collection.year}</span>}
               <Dot />
               <span>{pluralize(tracks.length, "faixa")}</span>
-              <Dot />
-              <span className="flex items-center gap-1.5">
-                <Clock3 className="size-3.5" />
-                {formatRuntime(tracks)}
-              </span>
+              {tracks.length > 0 && (
+                <>
+                  <Dot />
+                  <span className="flex items-center gap-1.5">
+                    <Clock3 className="size-3.5" />
+                    {formatRuntime(tracks)}
+                  </span>
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -66,7 +131,7 @@ export function CollectionView({ collection }: { collection: Collection }) {
       <div className="flex items-center gap-5 px-6 py-4">
         <button
           type="button"
-          onClick={() => playCollection(collection.trackIds)}
+          onClick={() => void playCollection(collection)}
           aria-label={`Tocar ${collection.title}`}
           className="bg-accent hover:bg-accent-strong grid size-14 place-items-center rounded-full text-white shadow-[0_10px_30px_rgb(255_61_90/0.35)] transition hover:scale-[1.04] active:scale-100"
         >
@@ -92,11 +157,24 @@ export function CollectionView({ collection }: { collection: Collection }) {
       </div>
 
       <div className="mx-6 rounded-lg bg-black/25 py-2">
-        <TrackTable
-          trackIds={collection.trackIds}
-          showAlbum={collection.kind !== "album"}
-          emptyLabel="Esta coleção ainda não tem faixas."
-        />
+        {loading ? (
+          <div className="grid place-items-center py-10">
+            <Loader2 className="size-5 animate-spin text-muted" />
+          </div>
+        ) : failed && tracks.length === 0 ? (
+          <p className="px-4 py-10 text-center text-sm text-muted">
+            Não foi possível carregar as faixas.{" "}
+            <button type="button" onClick={retry} className="underline hover:text-fg">
+              Tentar de novo
+            </button>
+          </p>
+        ) : (
+          <TrackTable
+            tracks={tracks}
+            showAlbum={collection.kind !== "album"}
+            emptyLabel="Esta coleção ainda não tem faixas."
+          />
+        )}
       </div>
     </div>
   );

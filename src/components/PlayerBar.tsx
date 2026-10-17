@@ -26,6 +26,7 @@ export function PlayerBar({ queueOpen, onToggleQueue }: Props) {
   const {
     state,
     current,
+    engine,
     toggle,
     next,
     previous,
@@ -46,11 +47,31 @@ export function PlayerBar({ queueOpen, onToggleQueue }: Props) {
       <div className="flex min-w-0 flex-1 items-center gap-3">
         {current ? (
           <>
-            <Cover seed={current.albumId} title={current.album} className="size-14 rounded-md" />
+            <Cover
+              seed={current.albumId || current.album}
+              title={current.album}
+              src={current.thumbnail}
+              className="size-14 rounded-md"
+            />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{current.title}</p>
               <p className="truncate text-xs text-muted">{current.artist}</p>
             </div>
+            <span
+              className={cn(
+                "ml-1 hidden shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium xl:inline",
+                engine === "audio"
+                  ? "border-accent/40 text-accent"
+                  : "border-line text-subtle",
+              )}
+              title={
+                engine === "audio"
+                  ? "Reproduzindo áudio real resolvido pelo yt-dlp"
+                  : "Transporte simulado: nenhum áudio real está tocando"
+              }
+            >
+              {engine === "audio" ? "áudio real" : "simulado"}
+            </span>
             <IconButton
               label={liked ? "Remover das curtidas" : "Curtir"}
               onClick={() => toggleLike(current.id)}
@@ -110,7 +131,7 @@ export function PlayerBar({ queueOpen, onToggleQueue }: Props) {
           <Slider
             label="Posição da faixa"
             value={state.position}
-            max={current?.duration ?? 1}
+            max={current && current.duration > 0 ? current.duration : 1}
             onChange={seek}
             disabled={!current}
           />

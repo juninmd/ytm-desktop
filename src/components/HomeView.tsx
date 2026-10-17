@@ -1,10 +1,10 @@
-import { getCollection, quickPicks, shelves } from "../data/catalog";
+import { useCatalog } from "../hooks/useCatalog";
 import { CollectionCard } from "./CollectionCard";
 import { usePlayCollection } from "../hooks/usePlayCollection";
 import { heroStyle } from "../lib/cover";
 import { Cover } from "./Cover";
 import { Play } from "lucide-react";
-import type { Collection } from "../data/catalog";
+import type { Collection } from "../types";
 
 function greeting(hour: number): string {
   if (hour < 12) return "Bom dia";
@@ -14,13 +14,33 @@ function greeting(hour: number): string {
 
 export function HomeView({ onOpen }: { onOpen: (collection: Collection) => void }) {
   const playCollection = usePlayCollection();
+  const { quickPicks, shelves, getCollection, status, error } = useCatalog();
+
+  if (status === "loading") {
+    return (
+      <div className="grid place-items-center px-6 py-24 text-center text-sm text-muted">
+        Carregando o catálogo…
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="grid place-items-center px-6 py-24 text-center">
+        <p className="text-lg font-semibold">Não foi possível carregar o catálogo</p>
+        <p className="mt-1 max-w-[46ch] text-sm text-muted">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="relative pb-8">
-      <div
-        className="fade-bottom pointer-events-none absolute inset-x-0 top-0 h-72"
-        style={heroStyle(quickPicks[0])}
-      />
+      {quickPicks[0] && (
+        <div
+          className="fade-bottom pointer-events-none absolute inset-x-0 top-0 h-72"
+          style={heroStyle(quickPicks[0])}
+        />
+      )}
       <div className="relative px-6 pt-2">
         <h1 className="text-2xl font-bold tracking-tight">{greeting(new Date().getHours())}</h1>
 
@@ -32,10 +52,15 @@ export function HomeView({ onOpen }: { onOpen: (collection: Collection) => void 
               <button
                 key={id}
                 type="button"
-                onClick={() => playCollection(collection.trackIds)}
+                onClick={() => void playCollection(collection)}
                 className="group flex items-center gap-4 overflow-hidden rounded-md bg-white/6 pr-4 text-left transition-colors hover:bg-white/12"
               >
-                <Cover seed={id} title={collection.title} className="size-[68px]" />
+                <Cover
+                  seed={id}
+                  title={collection.title}
+                  src={collection.thumbnail}
+                  className="size-[68px]"
+                />
                 <span className="min-w-0 flex-1 truncate text-sm font-semibold">
                   {collection.title}
                 </span>

@@ -253,9 +253,7 @@ pub fn auth_save_cookies(cookies: String) -> Result<(), String> {
         return clear_cookie_header();
     }
     if !trimmed.contains("SAPISID") && !trimmed.contains("__Secure-3PAPISID") {
-        return Err(
-            "Cookie inválido: falta o valor SAPISID ou __Secure-3PAPISID.".to_string(),
-        );
+        return Err("Cookie inválido: falta o valor SAPISID ou __Secure-3PAPISID.".to_string());
     }
     cookie_entry()?
         .set_password(trimmed)

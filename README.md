@@ -3,9 +3,11 @@
 A YouTube Music desktop client prototype — **Tauri 2 + React 19 + Tailwind 4** — built around the
 interaction model people already have in their fingers from Spotify.
 
-The point of the prototype is the surface: a dense three-pane desktop shell, a real transport, a
-queue, and an honest sign-in flow. Playback is simulated against a bundled mock catalogue; the
-authentication path is implemented end to end in Rust.
+The point of the project is the surface **plus a real engine behind it**: a dense three-pane desktop
+shell, a real transport, a queue, an honest sign-in flow — and, on the desktop build, the actual
+YouTube Music catalogue and real streaming audio. Authentication, the catalogue client and the
+stream resolver are all implemented end to end in Rust; the browser preview falls back to a bundled
+mock catalogue so the UI can be reviewed offline.
 
 ![Sign-in](docs/screenshots/01-signin.png)
 
@@ -23,14 +25,15 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 
 | Area | Status |
 |---|---|
-| Playback transport, queue, shuffle, repeat, volume, likes | Real state machine, **simulated audio** |
-| Catalogue | Bundled mock data — no YouTube Music content is fetched |
-| Artwork | Generated from a hash of the release id, so there are no image assets to ship |
-| Search | Real filtering over the mock catalogue |
-| Persistence | Likes, volume and repeat mode in `localStorage` |
-| Sign-in | Real OAuth 2.0 device flow in Rust against Google, plus the private-API header signing helper |
-| Token storage | Real OS credential vault (`keyring`: Windows Credential Manager / Keychain / Secret Service) |
-| Library sync, playback of real audio | Not implemented |
+| Playback transport, queue, shuffle, repeat, volume, likes | Real state machine; drives a real `<audio>` sink on desktop |
+| Audio | **Real** — each track is resolved through `yt-dlp` to a playable stream |
+| Catalogue (home, search, album/playlist pages) | **Real** YouTube Music (InnerTube) on desktop; the preview filters a bundled mock |
+| Artwork | Real thumbnails when the response carries them, else a generated sleeve from a hash |
+| Search | **Real** catalogue search on desktop |
+| Sign-in | **Real** OAuth 2.0 device flow in Rust against Google |
+| Personal library (playlists, liked songs, saved albums) | **Real**, once the browser cookie is connected — InnerTube needs `Cookie` + `SAPISIDHASH`, not a bearer token |
+| Token / cookie storage | Real OS credential vault (`keyring`: Windows Credential Manager / Keychain / Secret Service) |
+| Browser preview (`npm run dev`) | Mock catalogue + simulated transport, labelled as such in the UI |
 
 ## Stack
 
@@ -45,7 +48,7 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 ```bash
 npm install
 
-# 1. Review the UI in a browser (auth is simulated here)
+# 1. Review the UI in a browser (mock catalogue, simulated audio)
 npm run dev
 
 # 2. Run the real desktop app
@@ -55,8 +58,39 @@ npm run tauri dev
 npm run build && npm run tauri build
 ```
 
-Only the desktop build talks to Google. In the browser the auth backend is swapped for a simulated
-one so the flow can be reviewed without credentials — the screen itself says so.
+Only the desktop build talks to Google and to YouTube. In the browser the catalogue and auth
+backends are swapped for simulated ones so the flow can be reviewed without credentials — the
+screen itself says so.
+
+### Real audio needs yt-dlp
+
+The desktop player streams real audio, which it resolves per track through
+[`yt-dlp`](https://github.com/yt-dlp/yt-dlp). Install it and make sure it is on `PATH`:
+
+```powershell
+winget install yt-dlp.yt-dlp   # or: pipx install yt-dlp
+```
+
+The resolver looks for `$YTM_YTDLP` first, then a `yt-dlp` binary next to the app, then `PATH`. When
+none is found the player reports `simulado` on the now-playing bar and falls back to the simulated
+transport instead of failing — nothing is silently faked.
+
+## Catalogue and playback
+
+Two private surfaces carry the real product, and both are implemented in Rust:
+
+- **Catalogue** — `src-tauri/src/innertube.rs` speaks to YouTube Music's `WEB_REMIX` InnerTube API
+  (`/youtubei/v1/search`, `/browse`). Home, search and album/playlist pages are parsed from the
+  renderer tree and handed to the webview as plain JSON. Search and browsing work **without an
+  account**.
+- **Audio** — `src-tauri/src/stream.rs` turns a track's `videoId` into a time-limited, directly
+  playable url through `yt-dlp`. The webview's `<audio>` element streams it with range requests; the
+  player's `timeupdate` / `ended` events drive the same reducer the simulated transport uses.
+
+The personal library (liked songs, playlists, saved albums) additionally needs the browser cookie
+plus a per-request `SAPISIDHASH` digest. That is the one seam that asks something of you: paste the
+`Cookie` header from an authenticated `music.youtube.com` tab on the **Biblioteca** screen. It is
+stored only in the OS vault, by Rust, and never enters `localStorage`.
 
 ## Authentication
 
@@ -69,8 +103,8 @@ The full write-up is in **[docs/authentication.md](docs/authentication.md)**. Th
   the webview and never touches `localStorage`.
 - The private YouTube Music (InnerTube) endpoints that carry the real library do **not** accept a
   bearer token. They want a browser cookie plus a per-request `SAPISIDHASH` digest. That construction
-  is implemented in `src-tauri/src/auth.rs` and unit-tested, but it is undocumented and fragile — see
-  the trade-offs table in the write-up.
+  lives in `src-tauri/src/auth.rs` and is wired into the catalogue client (`src-tauri/src/innertube.rs`)
+  for the personal library — see the trade-offs table in the write-up.
 
 To run the real flow you need your own OAuth client of type *TVs and Limited Input devices*:
 
@@ -101,16 +135,21 @@ Ignored while typing in a field or while a button has focus, so nothing hijacks 
 src/
   App.tsx                  shell: auth gate, view routing, keyboard shortcuts
   types.ts                 domain model, no React
-  data/catalog.ts          mock catalogue + Collection projection
-  hooks/usePlayer.tsx      playback reducer (queue, order, cursor, repeat)
+  data/catalog.ts          bundled mock catalogue (browser preview only)
+  hooks/useCatalog.tsx     catalogue store: real InnerTube or the mock
+  hooks/usePlayer.tsx      playback reducer + the real <audio> sink
   hooks/useAuth.tsx        device-flow state machine
   hooks/usePlayCollection.ts
   lib/auth.ts              Tauri IPC boundary + browser fallback
+  lib/music.ts             catalogue/stream IPC boundary + browser fallback
   lib/cover.ts             deterministic artwork from a hash
   components/              Sidebar, TopBar, HomeView, CollectionView,
-                           TrackTable, PlayerBar, QueuePanel, SignInScreen
+                           TrackTable, PlayerBar, QueuePanel, SignInScreen,
+                           LibraryCookieForm
 src-tauri/src/
-  auth.rs                  device flow, token vault, SAPISIDHASH signing
+  auth.rs                  device flow, token + cookie vault, SAPISIDHASH signing
+  innertube.rs             real YouTube Music catalogue client (search/browse/home/library)
+  stream.rs                real audio resolution via yt-dlp
 tools/screenshots.mjs      Playwright harness that produced the images above
 ```
 
@@ -137,6 +176,14 @@ and no network dependency.
 npm run build        # tsc --strict + vite build
 cd src-tauri && cargo test --lib
 npm run preview & npm run screenshots   # writes docs/screenshots, fails on any console error
+```
+
+The Rust suite is offline and deterministic. Two tests additionally exercise the **live** service —
+real search/browse/home against InnerTube, and a real audio url through yt-dlp. They are opt-in so
+CI stays hermetic:
+
+```bash
+cd src-tauri && YTM_LIVE=1 cargo test --lib
 ```
 
 `tools/screenshots.mjs` produces `01`–`08` against the production build and exits non-zero on any
