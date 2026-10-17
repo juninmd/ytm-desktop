@@ -23,12 +23,15 @@ export function SearchView({
     if (term.length === 0) {
       setResults({ collections: [], tracks: [] });
       setState("idle");
+      setError(null);
       return;
     }
 
     let cancelled = false;
     setState("loading");
-    // Debounce so a fast typist does not fire a request per keystroke.
+    setError(null);
+    // Debounce so a fast typist does not fire a request per keystroke. The
+    // previous results stay on screen until the new ones arrive.
     const timer = window.setTimeout(() => {
       search(term)
         .then((page) => {
@@ -49,7 +52,9 @@ export function SearchView({
     };
   }, [query, search]);
 
-  if (state === "loading") {
+  const empty = results.collections.length === 0 && results.tracks.length === 0;
+
+  if (state === "loading" && empty) {
     return (
       <div className="grid place-items-center px-6 py-24 text-center text-muted">
         <Loader2 className="size-6 animate-spin" />
@@ -67,7 +72,7 @@ export function SearchView({
     );
   }
 
-  if (results.collections.length === 0 && results.tracks.length === 0) {
+  if (empty) {
     return (
       <div className="grid place-items-center px-6 py-24 text-center">
         <SearchX className="size-8 text-subtle" />

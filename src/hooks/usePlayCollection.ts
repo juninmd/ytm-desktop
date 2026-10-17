@@ -20,8 +20,13 @@ export function usePlayCollection() {
         return;
       }
 
-      const loaded = await ensureCollection(collection.id);
-      if (loaded && loaded.tracks.length > 0) play(loaded.tracks, startAt);
+      try {
+        const loaded = await ensureCollection(collection.id);
+        if (loaded && loaded.tracks.length > 0) play(loaded.tracks, startAt);
+      } catch {
+        // The card could not be expanded (offline); leave the transport as-is
+        // rather than surfacing an unhandled rejection.
+      }
     },
     [play, resolveTracks, ensureCollection],
   );

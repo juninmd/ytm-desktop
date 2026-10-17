@@ -20,10 +20,6 @@ export type LibraryData = { available: boolean; collections: Collection[]; track
 export type StreamInfo = { url: string; ext: string; expiresIn: number; trackId: string };
 export type ResolverStatus = { available: boolean; binary: string | null; detail: string | null };
 
-export function musicAvailable(): boolean {
-  return isDesktop();
-}
-
 export async function fetchHome(): Promise<HomeData> {
   if (isDesktop()) return invoke<HomeData>("music_home");
   return {
@@ -65,11 +61,6 @@ export async function fetchLibrary(): Promise<LibraryData> {
   return { available: true, collections: mock.collections, tracks: mock.tracks };
 }
 
-export async function libraryCookieStatus(): Promise<boolean> {
-  if (isDesktop()) return invoke<boolean>("auth_cookie_status");
-  return false;
-}
-
 /** Stores the browser cookie that unlocks the private library. */
 export async function saveLibraryCookies(cookie: string): Promise<void> {
   if (isDesktop()) await invoke("auth_save_cookies", { cookies: cookie });
@@ -84,11 +75,6 @@ export async function resolveStream(trackId: string): Promise<StreamInfo> {
     throw new Error("O áudio real só existe no app desktop (Tauri).");
   }
   return invoke<StreamInfo>("music_stream", { trackId });
-}
-
-export async function resolverStatus(): Promise<ResolverStatus> {
-  if (isDesktop()) return invoke<ResolverStatus>("music_resolver_status");
-  return { available: false, binary: null, detail: "Pré-visualização no navegador." };
 }
 
 function normalize(value: string): string {

@@ -135,7 +135,9 @@ function reducer(state: PlayerState, action: Action): PlayerState {
       const track = currentTrack(state);
       if (!track || !state.isPlaying) return state;
       const position = state.position + action.delta;
-      if (position < track.duration) return { ...state, position };
+      // A track whose duration the API omitted (`0`) must not auto-advance on
+      // every tick; it just plays on until the real element reports a length.
+      if (track.duration <= 0 || position < track.duration) return { ...state, position };
 
       if (state.repeat === "one") return { ...state, position: 0 };
 
@@ -192,6 +194,9 @@ function reducer(state: PlayerState, action: Action): PlayerState {
       if (state.repeat === "one") return { ...state, position: 0 };
       const next = step(state, 1);
       if (next === null) return { ...state, isPlaying: false, position: 0 };
+      // A one-track queue under repeat-all lands on the same cursor; bump the
+      // token so the load effect restarts the element instead of going silent.
+      if (next === state.cursor) return { ...state, position: 0, playToken: state.playToken + 1 };
       return { ...state, cursor: next, position: 0, isPlaying: true };
     }
 
@@ -276,7 +281,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setEngine("sim");
 
     const onTime = () => dispatch({ type: "sync", position: audio.currentTime });
-    const onMeta = () => dispatch({ type: "duration", duration: audio.duration });
+    const onMeta = () => {
+      dispatch({ type: "duration", duration: audio.duration });
+      // Metadata loaded: the element can actually play, so claim real audio.
+      setEngine("audio");
+    };
+    const onError = () => {
+      // A dead or rejected stream must not leave the UI stuck on a silent
+      // "playing" state — fall back to the simulated transport.
+      if (!cancelled) setEngine("sim");
+    };
     const onEnded = () => {
       const latest = stateRef.current;
       dispatch({ type: "ended" });
@@ -288,6 +302,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onMeta);
+    audio.addEventListener("error", onError);
     audio.addEventListener("ended", onEnded);
 
     void (async () => {
@@ -298,8 +313,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         audio.muted = stateRef.current.muted;
         audio.src = info.url;
         audio.load();
-        setEngine("audio");
-        if (stateRef.current.isPlaying) await audio.play().catch(() => {});
+        if (stateRef.current.isPlaying) {
+          // A rejected `play()` means no real sound: degrade to the simulation.
+          await audio.play().catch(() => {
+            if (!cancelled) setEngine("sim");
+          });
+        }
       } catch {
         // No real stream available (yt-dlp missing, offline): the simulated
         // transport takes over instead of leaving the user with a dead player.
@@ -314,6 +333,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.load();
       audio.removeEventListener("timeupdate", onTime);
       audio.removeEventListener("loadedmetadata", onMeta);
+      audio.removeEventListener("error", onError);
       audio.removeEventListener("ended", onEnded);
       audioRef.current = null;
     };

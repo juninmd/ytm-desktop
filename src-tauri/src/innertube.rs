@@ -56,6 +56,7 @@ pub struct Collection {
     pub description: Option<String>,
     pub year: Option<u32>,
     pub track_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thumbnail: Option<String>,
 }
 
@@ -63,6 +64,7 @@ pub struct Collection {
 #[serde(rename_all = "camelCase")]
 pub struct Shelf {
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub subtitle: Option<String>,
     pub ids: Vec<String>,
 }
@@ -486,6 +488,9 @@ fn list_track(
 ) -> Option<Track> {
     let id = video_id(item)?;
     let all = tokens(item);
+    // `tokens` starts with the title; scan the body only so a title that looks
+    // like "4:40" or "Song" cannot be mistaken for the clock or the type.
+    let body = all.get(1..).unwrap_or(&[]);
 
     let column_title = item
         .get("flexColumns")
@@ -501,11 +506,11 @@ fn list_track(
         .or(label_title)
         .unwrap_or_else(|| "Faixa desconhecida".to_string());
 
-    let page_type = all
+    let page_type = body
         .iter()
         .find(|token| PAGE_TYPES.contains(&token.as_str()));
-    let duration = all.iter().find_map(|token| clock(token)).unwrap_or(0.0);
-    let plays = all
+    let duration = body.iter().find_map(|token| clock(token)).unwrap_or(0.0);
+    let plays = body
         .iter()
         .find(|token| {
             token.ends_with("plays") || token.ends_with("views") || token.ends_with("ouvintes")
@@ -617,7 +622,9 @@ fn parse_page(payload: &Value, header: Option<(String, String, String)>) -> Cata
 
     for item in collect(payload, "musicResponsiveListItemRenderer") {
         let all = tokens(item);
-        let page_type = all
+        // Skip the title token so it cannot be read as the page type.
+        let body = all.get(1..).unwrap_or(&[]);
+        let page_type = body
             .iter()
             .find(|token| PAGE_TYPES.contains(&token.as_str()));
 
@@ -687,7 +694,8 @@ fn list_collection(item: &Value) -> Option<Collection> {
         .map(text_of)?;
 
     let all = tokens(item);
-    let page_type = all
+    let body = all.get(1..).unwrap_or(&[]);
+    let page_type = body
         .iter()
         .find(|token| PAGE_TYPES.contains(&token.as_str()))
         .cloned()

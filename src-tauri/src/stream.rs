@@ -82,7 +82,9 @@ fn find_ytdlp() -> Option<PathBuf> {
     None
 }
 
-#[tauri::command]
+/// Whether a resolver binary is available. `async` so the `--version` probe
+/// that locates it never runs on the UI thread.
+#[tauri::command(async)]
 pub fn music_resolver_status() -> ResolverStatus {
     match find_ytdlp() {
         Some(binary) => ResolverStatus {
@@ -103,7 +105,11 @@ pub fn music_resolver_status() -> ResolverStatus {
 }
 
 /// Resolves a `videoId` to a directly playable audio url.
-#[tauri::command]
+///
+/// `async` (via `async_runtime`) because it blocks on a `yt-dlp` child process:
+/// a synchronous command would stall the webview's event loop for the length of
+/// the extraction.
+#[tauri::command(async)]
 pub fn music_stream(track_id: String) -> Result<StreamInfo, String> {
     let binary = find_ytdlp().ok_or_else(|| {
         "yt-dlp não encontrado, então o áudio real não pode ser resolvido.".to_string()

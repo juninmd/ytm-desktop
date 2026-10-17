@@ -23,6 +23,8 @@ export function CollectionView({ collection: initial }: { collection: Collection
   const { resolveTracks, ensureCollection, getCollection } = useCatalog();
   const { state, toggleShuffle, isLiked, toggleLike } = usePlayer();
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   /** Guards against re-fetching as the store's callbacks change identity. */
   const attempted = useRef<string | null>(null);
 
@@ -37,18 +39,44 @@ export function CollectionView({ collection: initial }: { collection: Collection
     attempted.current = initial.id;
     let cancelled = false;
     setLoading(true);
-    ensureCollection(initial.id).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
+    setFailed(false);
+    ensureCollection(initial.id)
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [initial.id, needsLoading, ensureCollection]);
+  }, [initial.id, needsLoading, ensureCollection, attempt]);
+
+  const retry = () => {
+    attempted.current = null;
+    setAttempt((value) => value + 1);
+  };
 
   if (!stored) {
+    if (loading) {
+      return (
+        <div className="grid place-items-center py-24">
+          <Loader2 className="size-6 animate-spin text-muted" />
+        </div>
+      );
+    }
+    if (!failed) return null;
     return (
-      <div className="grid place-items-center py-24">
-        <Loader2 className="size-6 animate-spin text-muted" />
+      <div className="grid place-items-center px-6 py-24 text-center">
+        <p className="text-lg font-semibold">Não foi possível abrir esta coleção</p>
+        <p className="mt-1 text-sm text-muted">Verifique a conexão e tente de novo.</p>
+        <button
+          type="button"
+          onClick={retry}
+          className="mt-5 rounded-full border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
+        >
+          Tentar de novo
+        </button>
       </div>
     );
   }
@@ -133,6 +161,13 @@ export function CollectionView({ collection: initial }: { collection: Collection
           <div className="grid place-items-center py-10">
             <Loader2 className="size-5 animate-spin text-muted" />
           </div>
+        ) : failed && tracks.length === 0 ? (
+          <p className="px-4 py-10 text-center text-sm text-muted">
+            Não foi possível carregar as faixas.{" "}
+            <button type="button" onClick={retry} className="underline hover:text-fg">
+              Tentar de novo
+            </button>
+          </p>
         ) : (
           <TrackTable
             tracks={tracks}

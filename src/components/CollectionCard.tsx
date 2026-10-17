@@ -1,5 +1,5 @@
 import { Play } from "lucide-react";
-import type { Collection } from "../data/catalog";
+import type { Collection } from "../types";
 import { Cover } from "./Cover";
 import { usePlayCollection } from "../hooks/usePlayCollection";
 import { cn } from "../lib/cn";

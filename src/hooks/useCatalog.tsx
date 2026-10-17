@@ -49,7 +49,6 @@ export type CatalogApi = {
   likedId: string | null;
 
   getCollection: (id: string) => Collection | undefined;
-  getTrack: (id: string) => Track | undefined;
   resolveTracks: (ids: string[]) => Track[];
 
   /** Loads a card-only collection (home shelves) on demand. */
@@ -195,7 +194,6 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       libraryAvailable: library?.available ?? false,
       likedId,
       getCollection: (id) => collections[id],
-      getTrack: (id) => tracks[id],
       resolveTracks: (ids) => ids.flatMap((id) => (tracks[id] ? [tracks[id]] : [])),
       ensureCollection,
       search,

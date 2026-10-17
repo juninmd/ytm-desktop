@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: https://*.googleusercontent.com https://*.ytimg.com https://*.ggpht.com; media-src 'self' https://*.googlevideo.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://*.googlevideo.com"
+      "csp": "default-src 'self'; img-src 'self' data: https://*.googleusercontent.com https://*.ytimg.com https://*.ggpht.com; media-src 'self' https://*.googlevideo.com; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {
