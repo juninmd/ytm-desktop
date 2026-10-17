@@ -82,6 +82,12 @@ fn find_ytdlp() -> Option<PathBuf> {
     None
 }
 
+/// Where the browser-cookie import looks for `yt-dlp` (shared with the
+/// resolver, since it is the same binary).
+pub(crate) fn yt_dlp() -> Option<PathBuf> {
+    find_ytdlp()
+}
+
 /// Whether a resolver binary is available. `async` so the `--version` probe
 /// that locates it never runs on the UI thread.
 #[tauri::command(async)]

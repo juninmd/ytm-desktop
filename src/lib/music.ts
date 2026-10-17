@@ -70,6 +70,23 @@ export async function clearLibraryCookies(): Promise<void> {
   if (isDesktop()) await invoke("auth_clear_cookies");
 }
 
+export type ImportOutcome = { browser: string; fields: string[] };
+
+/** Lists the browsers the backend can read cookies from. */
+export async function cookieBrowsers(): Promise<string[]> {
+  if (isDesktop()) return invoke<string[]>("cookie_browsers");
+  return [];
+}
+
+/**
+ * Reads the YouTube Music cookie straight out of the browser's store (via
+ * yt-dlp) instead of asking the user to paste the header.
+ */
+export async function importBrowserCookies(browser: string): Promise<ImportOutcome> {
+  if (isDesktop()) return invoke<ImportOutcome>("auth_import_browser_cookies", { browser });
+  throw new Error("Ler cookies do navegador só existe no app desktop (Tauri).");
+}
+
 export async function resolveStream(trackId: string): Promise<StreamInfo> {
   if (!isDesktop()) {
     throw new Error("O áudio real só existe no app desktop (Tauri).");
