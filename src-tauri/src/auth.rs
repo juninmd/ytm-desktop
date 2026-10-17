@@ -248,6 +248,11 @@ pub fn auth_sign_out() -> Result<(), String> {
 /// token.
 #[tauri::command]
 pub fn auth_save_cookies(cookies: String) -> Result<(), String> {
+    store_cookie_header(&cookies)
+}
+
+/// Validation + persistence shared by the paste path and the browser import.
+pub(crate) fn store_cookie_header(cookies: &str) -> Result<(), String> {
     let trimmed = cookies.trim();
     if trimmed.is_empty() {
         return clear_cookie_header();
