@@ -119,10 +119,10 @@ $env:YTM_GOOGLE_CLIENT_SECRET = "GOCSPX-xxxx"
 npm run tauri dev
 ```
 
-Sign out is `auth_sign_out`, which deletes the vault entry. To revoke on Google's side as well, the
-account page is <https://myaccount.google.com/permissions>; the endpoint `POST
-https://oauth2.googleapis.com/revoke?token=<refresh_token>` would do it programmatically and is the
-natural next step.
+Sign out is `auth_sign_out`, which revokes the grant on Google's side
+(`POST https://oauth2.googleapis.com/revoke`, best effort) and then deletes the
+vault entry. The account page <https://myaccount.google.com/permissions> still
+lists every grant if you want to audit them.
 
 ## Browser preview
 

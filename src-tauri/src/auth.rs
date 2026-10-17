@@ -26,6 +26,7 @@ use sha1::{Digest, Sha1};
 const DEVICE_CODE_ENDPOINT: &str = "https://oauth2.googleapis.com/device/code";
 const TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 const USERINFO_ENDPOINT: &str = "https://openidconnect.googleapis.com/v1/userinfo";
+const REVOKE_ENDPOINT: &str = "https://oauth2.googleapis.com/revoke";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 /// Only scopes on Google's allowed list for this flow can be requested.
 const SCOPES: &str = "openid email profile https://www.googleapis.com/auth/youtube.readonly";
@@ -233,8 +234,18 @@ pub async fn auth_restore_session() -> Result<Option<Session>, String> {
     Ok(Some(fetch_profile(&access_token).await))
 }
 
+/// Signs out: revokes the grant on Google's side (best effort) and clears the
+/// stored refresh token. Revoking matters — otherwise a leaked token stays
+/// valid until it expires.
 #[tauri::command]
-pub fn auth_sign_out() -> Result<(), String> {
+pub async fn auth_sign_out() -> Result<(), String> {
+    if let Ok(Some(token)) = load_refresh_token() {
+        let _ = http()
+            .post(REVOKE_ENDPOINT)
+            .form(&[("token", token.as_str())])
+            .send()
+            .await;
+    }
     clear_refresh_token()
 }
 
