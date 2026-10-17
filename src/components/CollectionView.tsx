@@ -190,7 +190,9 @@ export function CollectionView({
             type="button"
             onClick={() => {
               setLoadingMore(true);
-              void loadMore(collection.id).finally(() => setLoadingMore(false));
+              void loadMore(collection.id)
+                .catch(() => setFailed(true))
+                .finally(() => setLoadingMore(false));
             }}
             disabled={loadingMore}
             className="flex items-center gap-2 rounded-full border border-line px-5 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg disabled:opacity-40"

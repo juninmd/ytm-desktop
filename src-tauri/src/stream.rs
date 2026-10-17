@@ -159,7 +159,15 @@ pub fn music_prefetch(track_id: String) -> bool {
 /// Drops every cached stream (e.g. after a resolver change).
 #[tauri::command]
 pub fn music_clear_stream_cache() {
-    cache().lock().map(|mut map| map.clear()).ok();
+    clear_cache();
+}
+
+/// Clears the resolved-url cache. Also called on sign-out, since the urls are
+/// capability-bearing.
+pub(crate) fn clear_cache() {
+    if let Ok(mut map) = cache().lock() {
+        map.clear();
+    }
 }
 
 struct CachedStream {
@@ -190,7 +198,10 @@ fn cached(track_id: &str) -> Option<StreamInfo> {
 
 fn remember(info: &StreamInfo) {
     if let Ok(mut map) = cache().lock() {
-        let valid_until = crate::auth::now() + URL_LIFETIME_SECONDS - URL_SAFETY_MARGIN_SECONDS;
+        let now = crate::auth::now();
+        // Evict what has already expired so the map cannot grow unbounded.
+        map.retain(|_, entry| entry.valid_until > now);
+        let valid_until = now + URL_LIFETIME_SECONDS - URL_SAFETY_MARGIN_SECONDS;
         map.insert(
             info.track_id.clone(),
             CachedStream {

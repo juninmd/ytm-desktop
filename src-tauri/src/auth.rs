@@ -143,13 +143,42 @@ pub async fn auth_begin_device_flow() -> Result<DeviceCode, String> {
     Ok(DeviceCode {
         user_code: payload.user_code,
         device_code: payload.device_code,
-        verification_url: payload
-            .verification_url
-            .or(payload.verification_uri)
-            .unwrap_or_else(|| "https://www.google.com/device".to_string()),
+        // Defence in depth: the frontend also allowlists this before opening it,
+        // but never hand out a url we would refuse to open.
+        verification_url: allowlisted_device_url(
+            payload
+                .verification_url
+                .or(payload.verification_uri)
+                .as_deref(),
+        ),
         expires_in: payload.expires_in,
         interval: payload.interval.unwrap_or(5),
     })
+}
+
+/// Google only ever sends `https://…google.com/device`; anything else falls back
+/// to the documented url rather than being surfaced.
+fn allowlisted_device_url(url: Option<&str>) -> String {
+    const FALLBACK: &str = "https://www.google.com/device";
+    let Some(url) = url else {
+        return FALLBACK.to_string();
+    };
+    let rest = match url.strip_prefix("https://") {
+        Some(rest) => rest,
+        None => return FALLBACK.to_string(),
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    // Google never sends userinfo, and a backslash is parsed as a path
+    // separator by browsers — refuse anything a browser would read differently.
+    if host.is_empty() || host.contains('@') || host.contains('\\') {
+        return FALLBACK.to_string();
+    }
+    let host = host.split(':').next().unwrap_or(host);
+    if host == "google.com" || host.ends_with(".google.com") {
+        url.to_string()
+    } else {
+        FALLBACK.to_string()
+    }
 }
 
 /// Step 2: poll until the user approves, then persist the refresh token.
@@ -240,12 +269,16 @@ pub async fn auth_restore_session() -> Result<Option<Session>, String> {
 #[tauri::command]
 pub async fn auth_sign_out() -> Result<(), String> {
     if let Ok(Some(token)) = load_refresh_token() {
+        // Bounded: a blackholed network must not stall sign-out.
         let _ = http()
             .post(REVOKE_ENDPOINT)
+            .timeout(std::time::Duration::from_secs(5))
             .form(&[("token", token.as_str())])
             .send()
             .await;
     }
+    // Resolved stream urls are capability-bearing; drop them with the session.
+    crate::stream::clear_cache();
     clear_refresh_token()
 }
 
@@ -452,6 +485,36 @@ mod tests {
             client_id: "client-id.apps.googleusercontent.com".to_string(),
             client_secret: "client-secret".to_string(),
         }
+    }
+
+    #[test]
+    fn keeps_only_google_device_urls() {
+        assert_eq!(
+            allowlisted_device_url(Some("https://www.google.com/device")),
+            "https://www.google.com/device"
+        );
+        assert_eq!(
+            allowlisted_device_url(Some("https://google.com/device?x=1")),
+            "https://google.com/device?x=1"
+        );
+        for hostile in [
+            "https://evil-google.com/device",
+            "https://google.com.evil.com/device",
+            "https://user@evil.com/device",
+            "https://evil.com\\@google.com/device",
+            "http://www.google.com/device",
+            "javascript:alert(1)",
+        ] {
+            assert_eq!(
+                allowlisted_device_url(Some(hostile)),
+                "https://www.google.com/device",
+                "should reject {hostile}"
+            );
+        }
+        assert_eq!(
+            allowlisted_device_url(None),
+            "https://www.google.com/device"
+        );
     }
 
     #[test]

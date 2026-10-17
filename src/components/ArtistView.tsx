@@ -93,7 +93,7 @@ export function ArtistView({
       </div>
 
       <div className="mx-6 rounded-lg bg-black/25 py-2">
-        <TrackTable tracks={tracks} showAlbum emptyLabel="Nenhuma música em destaque." />
+        <TrackTable tracks={tracks} showAlbum={false} emptyLabel="Nenhuma música em destaque." />
       </div>
 
       {sections.map((section) => (

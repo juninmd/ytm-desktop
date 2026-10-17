@@ -232,6 +232,7 @@ pub async fn music_more(continuation: String, search: Option<bool>) -> Result<Ca
 /// The endless "radio" that follows a track, so the queue never just stops.
 #[tauri::command]
 pub async fn music_radio(video_id: String) -> Result<Vec<Track>, String> {
+    let seed = video_id.clone();
     let playlist_id = format!("RDAMVM{video_id}");
     let payload = post(
         "next",
@@ -243,7 +244,17 @@ pub async fn music_radio(video_id: String) -> Result<Vec<Track>, String> {
         }),
     )
     .await?;
-    Ok(radio_tracks(&payload))
+
+    // The panel opens with the seed itself; drop it so appending the radio does
+    // not replay (and duplicate) the track that just finished.
+    Ok(radio_without_seed(&payload, &seed))
+}
+
+/// Radio tracks with the seed removed (the panel lists it first).
+fn radio_without_seed(payload: &Value, seed: &str) -> Vec<Track> {
+    let mut tracks = radio_tracks(payload);
+    tracks.retain(|track| track.id != seed);
+    tracks
 }
 
 /// Opens an album (`MPREb_…`), a playlist (`VL…`), an artist (`UC…`) or any
@@ -1157,6 +1168,16 @@ mod tests {
         assert_eq!(tracks[0].year, 2001);
         assert_eq!(tracks[0].duration, 165.0);
         assert_eq!(tracks[1].id, "r2");
+    }
+
+    // Regression guard: the radio panel opens with the seed track, which used to
+    // be replayed (and duplicated) every time the queue drained.
+    #[test]
+    fn radio_drops_the_seed_track() {
+        let payload = serde_json::from_str(RADIO_PAGE).unwrap();
+        let tracks = radio_without_seed(&payload, "r1");
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].id, "r2");
     }
 
     const CONTINUATION_PAGE: &str = r#"{
