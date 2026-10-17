@@ -23,6 +23,7 @@ import {
   type LibraryData,
 } from "../lib/music";
 import { isDesktop } from "../lib/auth";
+import { EMPTY_MAPS, mergeCatalog, type CatalogMaps } from "../lib/catalog";
 import type { Collection, Track } from "../types";
 
 /**
@@ -72,10 +73,7 @@ export type CatalogApi = {
 const CatalogContext = createContext<CatalogApi | null>(null);
 
 export function CatalogProvider({ children }: { children: ReactNode }) {
-  const [maps, setMaps] = useState<{
-    collections: Record<string, Collection>;
-    tracks: Record<string, Track>;
-  }>({ collections: {}, tracks: {} });
+  const [maps, setMaps] = useState<CatalogMaps>(EMPTY_MAPS);
   const [home, setHome] = useState<HomeData | null>(null);
   const [library, setLibrary] = useState<LibraryData | null>(null);
   const [status, setStatus] = useState<CatalogApi["status"]>("loading");
@@ -86,21 +84,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   mapsRef.current = maps;
 
   const merge = useCallback((page: CatalogPage) => {
-    setMaps((previous) => {
-      const collections = { ...previous.collections };
-      for (const collection of page.collections) {
-        if (!collection.id) continue;
-        const existing = collections[collection.id];
-        // Keep whichever side knows the track list.
-        collections[collection.id] =
-          existing && existing.trackIds.length > 0 && collection.trackIds.length === 0
-            ? existing
-            : collection;
-      }
-      const tracks = { ...previous.tracks };
-      for (const track of page.tracks) tracks[track.id] = track;
-      return { collections, tracks };
-    });
+    setMaps((previous) => mergeCatalog(previous, page));
   }, []);
 
   const loadLibrary = useCallback(async () => {

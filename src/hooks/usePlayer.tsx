@@ -9,14 +9,20 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { PlayerState, RepeatMode, Track } from "../types";
+import type { PlayerState, Track } from "../types";
 import { isDesktop } from "../lib/auth";
 import { rateTrack, resolveStream, resolverStatus } from "../lib/music";
+import {
+  createInitialState,
+  reducer,
+  type Preferences,
+} from "./playerReducer";
 
 /**
  * The playback state machine, plus the audio sink.
  *
- * The reducer is pure and backend-agnostic. Two sinks drive it:
+ * The reducer lives in `playerReducer.ts` (pure, unit-tested). Two sinks drive
+ * it:
  *
  * * **Real audio** (desktop, track resolvable): a hidden `<audio>` element
  *   streams the url yt-dlp resolved. Its `timeupdate` / `ended` events feed the
@@ -29,41 +35,7 @@ import { rateTrack, resolveStream, resolverStatus } from "../lib/music";
 
 export type PlaybackEngine = "sim" | "audio";
 
-type Action =
-  | { type: "play"; queue: Track[]; startIndex: number }
-  | { type: "toggle" }
-  | { type: "tick"; delta: number }
-  | { type: "sync"; position: number }
-  | { type: "duration"; duration: number }
-  | { type: "seek"; position: number }
-  | { type: "next"; manual: boolean }
-  | { type: "previous" }
-  | { type: "ended" }
-  | { type: "volume"; value: number }
-  | { type: "toggle-mute" }
-  | { type: "shuffle" }
-  | { type: "repeat" }
-  | { type: "like"; id: string }
-  | { type: "sync-liked"; ids: string[] };
-
 const STORAGE_KEY = "ytm-desktop:preferences";
-
-function identityOrder(length: number): number[] {
-  return Array.from({ length }, (_, index) => index);
-}
-
-/** Fisher-Yates, seeded from the current track so the transition is continuous. */
-function shuffledOrder(length: number, keepAt: number): number[] {
-  const order = identityOrder(length);
-  const [keep] = order.splice(keepAt, 1);
-  for (let i = order.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  return [keep, ...order];
-}
-
-type Preferences = { volume: number; repeat: RepeatMode; liked: string[] };
 
 function loadPreferences(): Preferences {
   try {
@@ -77,165 +49,6 @@ function loadPreferences(): Preferences {
     };
   } catch {
     return { volume: 0.7, repeat: "off", liked: [] };
-  }
-}
-
-function initialState(): PlayerState {
-  const preferences = loadPreferences();
-  return {
-    queue: [],
-    order: [],
-    cursor: 0,
-    isPlaying: false,
-    position: 0,
-    volume: preferences.volume,
-    muted: false,
-    shuffle: false,
-    repeat: preferences.repeat,
-    liked: preferences.liked,
-    playToken: 0,
-  };
-}
-
-function currentTrack(state: PlayerState): Track | null {
-  return state.queue[state.order[state.cursor]] ?? null;
-}
-
-/** Advances the cursor. Returns null when the queue is exhausted and repeat is off. */
-function step(state: PlayerState, direction: 1 | -1): number | null {
-  const size = state.order.length;
-  if (size === 0) return null;
-  const next = state.cursor + direction;
-  if (next >= 0 && next < size) return next;
-  if (state.repeat === "all") return (next + size) % size;
-  return null;
-}
-
-function reducer(state: PlayerState, action: Action): PlayerState {
-  switch (action.type) {
-    case "play": {
-      const size = action.queue.length;
-      if (size === 0) return state;
-      const order = state.shuffle ? shuffledOrder(size, action.startIndex) : identityOrder(size);
-      return {
-        ...state,
-        queue: action.queue,
-        order,
-        cursor: state.shuffle ? 0 : action.startIndex,
-        isPlaying: true,
-        position: 0,
-        // Bumped so replaying the current track reloads its audio element.
-        playToken: state.playToken + 1,
-      };
-    }
-
-    case "toggle":
-      return state.queue.length === 0 ? state : { ...state, isPlaying: !state.isPlaying };
-
-    case "tick": {
-      const track = currentTrack(state);
-      if (!track || !state.isPlaying) return state;
-      const position = state.position + action.delta;
-      // A track whose duration the API omitted (`0`) must not auto-advance on
-      // every tick; it just plays on until the real element reports a length.
-      if (track.duration <= 0 || position < track.duration) return { ...state, position };
-
-      if (state.repeat === "one") return { ...state, position: 0 };
-
-      const next = step(state, 1);
-      if (next === null) {
-        // End of queue, repeat off: park on the last track, paused.
-        return { ...state, isPlaying: false, position: track.duration };
-      }
-      return { ...state, cursor: next, position: 0 };
-    }
-
-    /** The real audio element reporting its playhead. */
-    case "sync":
-      return { ...state, position: action.position };
-
-    /** The real audio element reporting its duration, which the API omits. */
-    case "duration": {
-      const index = state.order[state.cursor];
-      const track = state.queue[index];
-      if (!track || !Number.isFinite(action.duration) || track.duration === action.duration) {
-        return state;
-      }
-      const queue = state.queue.slice();
-      queue[index] = { ...track, duration: action.duration };
-      return { ...state, queue };
-    }
-
-    case "seek": {
-      const track = currentTrack(state);
-      if (!track) return state;
-      const max = track.duration > 0 ? track.duration : Number.POSITIVE_INFINITY;
-      const position = Math.min(Math.max(action.position, 0), max);
-      return { ...state, position };
-    }
-
-    case "next": {
-      if (action.manual && state.repeat === "one") {
-        return { ...state, position: 0 };
-      }
-      const next = step(state, 1);
-      if (next === null) return state;
-      return { ...state, cursor: next, position: 0, isPlaying: true };
-    }
-
-    case "previous": {
-      if (state.position > 3) return { ...state, position: 0 };
-      const previous = step(state, -1);
-      if (previous === null) return { ...state, position: 0 };
-      return { ...state, cursor: previous, position: 0, isPlaying: true };
-    }
-
-    /** The real audio element finishing a track. */
-    case "ended": {
-      if (state.repeat === "one") return { ...state, position: 0 };
-      const next = step(state, 1);
-      if (next === null) return { ...state, isPlaying: false, position: 0 };
-      // A one-track queue under repeat-all lands on the same cursor; bump the
-      // token so the load effect restarts the element instead of going silent.
-      if (next === state.cursor) return { ...state, position: 0, playToken: state.playToken + 1 };
-      return { ...state, cursor: next, position: 0, isPlaying: true };
-    }
-
-    case "volume":
-      return { ...state, volume: action.value, muted: action.value === 0 ? state.muted : false };
-
-    case "toggle-mute":
-      return { ...state, muted: !state.muted };
-
-    case "shuffle": {
-      const shuffle = !state.shuffle;
-      if (state.queue.length === 0) return { ...state, shuffle };
-      const current = state.order[state.cursor];
-      return {
-        ...state,
-        shuffle,
-        order: shuffle ? shuffledOrder(state.queue.length, state.cursor) : identityOrder(state.queue.length),
-        cursor: shuffle ? 0 : current,
-      };
-    }
-
-    case "repeat": {
-      const cycle: Record<RepeatMode, RepeatMode> = { off: "all", all: "one", one: "off" };
-      return { ...state, repeat: cycle[state.repeat] };
-    }
-
-    case "like": {
-      const liked = state.liked.includes(action.id)
-        ? state.liked.filter((id) => id !== action.id)
-        : [...state.liked, action.id];
-      return { ...state, liked };
-    }
-
-    /** Seeds the local liked set from the account's liked songs. */
-    case "sync-liked": {
-      const merged = Array.from(new Set([...state.liked, ...action.ids]));
-      return merged.length === state.liked.length ? state : { ...state, liked: merged };
-    }
   }
 }
 
@@ -272,7 +85,7 @@ const PlayerContext = createContext<PlayerApi | null>(null);
 const TICK_MS = 250;
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, initialState);
+  const [state, dispatch] = useReducer(reducer, undefined, () => createInitialState(loadPreferences()));
   const [engine, setEngine] = useState<PlaybackEngine>("sim");
   const [resolverAvailable, setResolverAvailable] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -412,6 +225,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "play", queue, startIndex });
   }, []);
 
+  const seek = useCallback((seconds: number) => {
+    const audio = audioRef.current;
+    if (audio) {
+      try {
+        audio.currentTime = seconds;
+      } catch {
+        // Not seekable yet; the reducer still moves the scrubber.
+      }
+    }
+    dispatch({ type: "seek", position: seconds });
+  }, []);
+
   const flash = useCallback((message: string) => {
     setNotice(message);
     window.clearTimeout(noticeTimer.current);
@@ -451,21 +276,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setNotice(null);
   }, []);
 
-  const seek = useCallback((seconds: number) => {
-    const audio = audioRef.current;
-    if (audio) {
-      try {
-        audio.currentTime = seconds;
-      } catch {
-        // Not seekable yet; the reducer still moves the scrubber.
-      }
-    }
-    dispatch({ type: "seek", position: seconds });
-  }, []);
-
   // --- OS media integration (media keys, the system overlay) ---------------
   // The sign-in screen promises background playback with native controls; this
-  // is what delivers it, via the Media Session API that Chromium/WebView2 expos.
+  // is what delivers it, via the Media Session API Chromium/WebView2 expose.
   const actionsRef = useRef({
     toggle: () => dispatch({ type: "toggle" }),
     next: () => dispatch({ type: "next", manual: true }),
@@ -585,7 +398,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       isLiked: (id) => state.liked.includes(id),
       isCurrent: (id) => (state.queue[state.order[state.cursor]]?.id ?? null) === id,
     };
-  }, [state, current, engine, resolverAvailable, play, seek, toggleLike, syncLiked, notice, dismissNotice]);
+  }, [
+    state,
+    current,
+    engine,
+    resolverAvailable,
+    play,
+    seek,
+    toggleLike,
+    syncLiked,
+    notice,
+    dismissNotice,
+  ]);
 
   return <PlayerContext.Provider value={api}>{children}</PlayerContext.Provider>;
 }

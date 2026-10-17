@@ -39,6 +39,27 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      # Pure unit tests: the playback reducer and the catalogue merge.
+      - name: Unit tests (Vitest)
+        run: npm test
+
+      # End-to-end against the production build with a stubbed Rust backend, so
+      # the desktop-only paths (banner, connected library, account likes) are
+      # exercised without an account.
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: End-to-end (stubbed backend)
+        shell: pwsh
+        run: |
+          $server = Start-Process -FilePath "node" -ArgumentList "node_modules/vite/bin/vite.js","preview","--port","4173","--strictPort" -PassThru
+          try {
+            Start-Sleep -Seconds 4
+            node tools/e2e.mjs
+          } finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Rust formatting
         run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
 
