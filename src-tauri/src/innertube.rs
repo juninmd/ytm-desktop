@@ -297,6 +297,32 @@ pub async fn music_library() -> Result<LibraryStatus, String> {
     })
 }
 
+/// Likes (`rating = "like"`) or un-likes (`rating = "none"`) a track on the
+/// account, the way the web player's heart does.
+///
+/// Writes require the browser cookie; without one this returns `Ok(false)` so
+/// the caller can keep the like local instead of treating it as a failure.
+#[tauri::command]
+pub async fn music_rate(video_id: String, rating: String) -> Result<bool, String> {
+    if !library_available() {
+        return Ok(false);
+    }
+
+    let endpoint = match rating.as_str() {
+        "like" => "like/like",
+        "none" => "like/removelike",
+        other => return Err(format!("Avaliação inválida: {other}")),
+    };
+
+    post(
+        endpoint,
+        json!({ "context": context(), "target": { "videoId": video_id } }),
+    )
+    .await?;
+
+    Ok(true)
+}
+
 /* -------------------------------------------------------------------------- */
 /* Parsing                                                                    */
 /* -------------------------------------------------------------------------- */

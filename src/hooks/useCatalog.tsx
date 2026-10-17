@@ -50,6 +50,8 @@ export type CatalogApi = {
   libraryAvailable: boolean;
   /** The account's "Liked music" collection id, when one is known. */
   likedId: string | null;
+  /** Track ids from the account's liked songs, to seed the local liked set. */
+  likedTrackIds: string[];
 
   getCollection: (id: string) => Collection | undefined;
   resolveTracks: (ids: string[]) => Track[];
@@ -217,6 +219,8 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
           collection.id === "curtidas" || collection.id === "LM" || /curtidas|liked/i.test(collection.title),
       )?.id ?? null;
 
+    const likedTrackIds = likedId ? collections[likedId]?.trackIds ?? [] : [];
+
     return {
       source: isDesktop() ? "ytmusic" : "demo",
       status,
@@ -226,6 +230,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       libraryCollections,
       libraryAvailable: library?.available ?? false,
       likedId,
+      likedTrackIds,
       getCollection: (id) => collections[id],
       resolveTracks: (ids) => ids.flatMap((id) => (tracks[id] ? [tracks[id]] : [])),
       ensureCollection,

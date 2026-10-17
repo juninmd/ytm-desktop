@@ -100,6 +100,15 @@ export async function resolverStatus(): Promise<ResolverStatus> {
   return { available: false, binary: null, detail: "Pré-visualização no navegador." };
 }
 
+/**
+ * Likes or un-likes a track on the account. Resolves `false` when no library is
+ * connected (the like stays local); rejects when the account write failed.
+ */
+export async function rateTrack(trackId: string, rating: "like" | "none"): Promise<boolean> {
+  if (!isDesktop()) return false;
+  return invoke<boolean>("music_rate", { trackId, rating });
+}
+
 function normalize(value: string): string {
   return value
     .toLowerCase()

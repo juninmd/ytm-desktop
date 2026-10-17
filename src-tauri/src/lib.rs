@@ -20,6 +20,7 @@ pub fn run() {
             innertube::music_search,
             innertube::music_browse,
             innertube::music_library,
+            innertube::music_rate,
             stream::music_stream,
             stream::music_resolver_status,
         ])

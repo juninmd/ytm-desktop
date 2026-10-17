@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { PlayerState, RepeatMode, Track } from "../types";
 import { isDesktop } from "../lib/auth";
-import { resolveStream, resolverStatus } from "../lib/music";
+import { rateTrack, resolveStream, resolverStatus } from "../lib/music";
 
 /**
  * The playback state machine, plus the audio sink.
@@ -43,7 +43,8 @@ type Action =
   | { type: "toggle-mute" }
   | { type: "shuffle" }
   | { type: "repeat" }
-  | { type: "like"; id: string };
+  | { type: "like"; id: string }
+  | { type: "sync-liked"; ids: string[] };
 
 const STORAGE_KEY = "ytm-desktop:preferences";
 
@@ -229,6 +230,12 @@ function reducer(state: PlayerState, action: Action): PlayerState {
         : [...state.liked, action.id];
       return { ...state, liked };
     }
+
+    /** Seeds the local liked set from the account's liked songs. */
+    case "sync-liked": {
+      const merged = Array.from(new Set([...state.liked, ...action.ids]));
+      return merged.length === state.liked.length ? state : { ...state, liked: merged };
+    }
   }
 }
 
@@ -250,6 +257,11 @@ export type PlayerApi = {
   toggleShuffle: () => void;
   cycleRepeat: () => void;
   toggleLike: (id: string) => void;
+  /** Seeds likes from the connected account. */
+  syncLiked: (ids: string[]) => void;
+  /** Dismissible, short-lived message (e.g. a failed account write). */
+  notice: string | null;
+  dismissNotice: () => void;
   isLiked: (id: string) => boolean;
   isCurrent: (id: string) => boolean;
 };
@@ -263,7 +275,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [engine, setEngine] = useState<PlaybackEngine>("sim");
   const [resolverAvailable, setResolverAvailable] = useState<boolean | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
 
   // Latest state, readable from audio callbacks without re-subscribing.
   const stateRef = useRef(state);
@@ -398,6 +412,45 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "play", queue, startIndex });
   }, []);
 
+  const flash = useCallback((message: string) => {
+    setNotice(message);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 5000);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
+
+  /**
+   * Optimistic like. With a connected library the heart writes through to the
+   * account (`music_rate`); the change is rolled back if that write fails. With
+   * no library the like stays local, which is the honest offline behaviour.
+   */
+  const toggleLike = useCallback(
+    (id: string) => {
+      const willLike = !stateRef.current.liked.includes(id);
+      dispatch({ type: "like", id });
+      if (!isDesktop()) return;
+      void rateTrack(id, willLike ? "like" : "none")
+        .then((written) => {
+          if (!written) return; // No account connected: the local like stands.
+        })
+        .catch(() => {
+          dispatch({ type: "like", id }); // Undo the optimistic change.
+          flash("Não foi possível salvar a curtida na conta.");
+        });
+    },
+    [flash],
+  );
+
+  const syncLiked = useCallback((ids: string[]) => {
+    if (ids.length > 0) dispatch({ type: "sync-liked", ids });
+  }, []);
+
+  const dismissNotice = useCallback(() => {
+    window.clearTimeout(noticeTimer.current);
+    setNotice(null);
+  }, []);
+
   const seek = useCallback((seconds: number) => {
     const audio = audioRef.current;
     if (audio) {
@@ -525,11 +578,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       toggleMute: () => dispatch({ type: "toggle-mute" }),
       toggleShuffle: () => dispatch({ type: "shuffle" }),
       cycleRepeat: () => dispatch({ type: "repeat" }),
-      toggleLike: (id) => dispatch({ type: "like", id }),
+      toggleLike,
+      syncLiked,
+      notice,
+      dismissNotice,
       isLiked: (id) => state.liked.includes(id),
       isCurrent: (id) => (state.queue[state.order[state.cursor]]?.id ?? null) === id,
     };
-  }, [state, current, engine, resolverAvailable, play, seek]);
+  }, [state, current, engine, resolverAvailable, play, seek, toggleLike, syncLiked, notice, dismissNotice]);
 
   return <PlayerContext.Provider value={api}>{children}</PlayerContext.Provider>;
 }
