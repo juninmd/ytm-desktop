@@ -135,9 +135,13 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   // real options.
   useEffect(() => {
     let cancelled = false;
-    void cookieBrowsers().then((list) => {
-      if (!cancelled) setBrowsers(list);
-    });
+    void cookieBrowsers()
+      .then((list) => {
+        if (!cancelled) setBrowsers(list);
+      })
+      .catch(() => {
+        // No browser list (browser preview): the paste path still works.
+      });
     return () => {
       cancelled = true;
     };

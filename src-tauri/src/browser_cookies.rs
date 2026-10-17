@@ -20,6 +20,7 @@
 //! and driving the user's real profile is both fragile and heavier than the tool
 //! we already ship.
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::Serialize;
@@ -55,7 +56,15 @@ pub fn auth_import_browser_cookies(browser: String) -> Result<ImportOutcome, Str
         "yt-dlp não encontrado. Ele é necessário para ler os cookies do navegador.".to_string()
     })?;
 
-    let path = temp_path();
+    // Put the jar in a fresh, private, exclusively-created directory so yt-dlp
+    // creates the file itself (it rejects a pre-created empty one) and cannot be
+    // tricked into following a pre-planted symlink. The RAII guard removes the
+    // whole directory on every return path.
+    let directory = create_private_dir()?;
+    let _guard = TempJar {
+        directory: directory.clone(),
+    };
+    let path = directory.join("cookies.txt");
     let cookie_path = path.to_string_lossy().into_owned();
 
     let output = Command::new(&binary)
@@ -76,10 +85,20 @@ pub fn auth_import_browser_cookies(browser: String) -> Result<ImportOutcome, Str
     // The jar is written on exit even when the extraction itself fails, so read
     // the file first and only fall back to yt-dlp's stderr if it is unusable.
     let contents = std::fs::read_to_string(&path).unwrap_or_default();
-    let _ = std::fs::remove_file(&path);
+    drop(_guard); // Remove the plaintext jar as early as possible.
 
     let header = cookie_header_from_netscape(&contents);
-    if !header.contains("SAPISID") {
+    let fields = header
+        .split("; ")
+        .filter_map(|pair| pair.split_once('=').map(|(name, _)| name.to_string()))
+        .collect::<Vec<_>>();
+
+    // Require exactly the names the signer looks up, not a substring match
+    // (`__Secure-3PSAPISID` alone would import but never sign).
+    if !fields
+        .iter()
+        .any(|name| name == "SAPISID" || name == "__Secure-3PAPISID")
+    {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let detail = stderr
             .lines()
@@ -93,14 +112,69 @@ pub fn auth_import_browser_cookies(browser: String) -> Result<ImportOutcome, Str
         ));
     }
 
-    let fields = header
-        .split("; ")
-        .filter_map(|pair| pair.split_once('=').map(|(name, _)| name.to_string()))
-        .collect::<Vec<_>>();
-
     crate::auth::store_cookie_header(&header)?;
 
     Ok(ImportOutcome { browser, fields })
+}
+
+/// Creates an exclusive, private temp directory to hold the jar. `create_dir`
+/// fails if anything already exists at the path (defeating a pre-planted
+/// symlink), and a fresh random name makes that collision unlikely.
+fn create_private_dir() -> Result<PathBuf, String> {
+    let base = std::env::temp_dir();
+    for _ in 0..16 {
+        let directory = base.join(format!(
+            "ytm-browser-cookies-{}-{:016x}",
+            std::process::id(),
+            random_suffix()
+        ));
+        match std::fs::create_dir(&directory) {
+            Ok(()) => {
+                restrict_to_owner(&directory);
+                return Ok(directory);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!(
+                    "Não foi possível criar um diretório temporário: {error}"
+                ));
+            }
+        }
+    }
+    Err("Não foi possível criar um diretório temporário exclusivo.".to_string())
+}
+
+/// Best-effort `0700` on Unix; on Windows the temp directory is already
+/// per-user.
+#[cfg(unix)]
+fn restrict_to_owner(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_path: &Path) {}
+
+fn random_suffix() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.subsec_nanos() as u64)
+        .unwrap_or_default();
+    let tick = COUNTER.fetch_add(1, Ordering::Relaxed);
+    nanos ^ tick.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+}
+
+/// Removes the jar directory when it goes out of scope, on every path.
+struct TempJar {
+    directory: PathBuf,
+}
+
+impl Drop for TempJar {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
 }
 
 /// Builds a `Cookie` header from a Netscape `cookies.txt`, keeping only the
@@ -120,7 +194,13 @@ fn cookie_header_from_netscape(contents: &str) -> String {
             continue;
         }
         let domain = fields[0].trim_start_matches('.');
-        if !(domain.ends_with("youtube.com") || domain.ends_with("google.com")) {
+        // Require a label boundary so `evil-youtube.com` cannot pass as
+        // `youtube.com`.
+        let is_google = domain == "google.com"
+            || domain == "youtube.com"
+            || domain.ends_with(".google.com")
+            || domain.ends_with(".youtube.com");
+        if !is_google {
             continue;
         }
         let name = fields[5];
@@ -132,14 +212,6 @@ fn cookie_header_from_netscape(contents: &str) -> String {
     }
 
     pairs.join("; ")
-}
-
-fn temp_path() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "ytm-browser-cookies-{}-{}.txt",
-        std::process::id(),
-        crate::auth::now()
-    ))
 }
 
 #[cfg(test)]
@@ -173,5 +245,17 @@ example.com\tTRUE\t/\tTRUE\t1814700000\tTRACKER\tnope
             "# comment\n\n.youtube.com\tTRUE\t/\tTRUE\t1\tSAPISID\tonly\nbroken-line\n",
         );
         assert_eq!(header, "SAPISID=only");
+    }
+
+    // Regression guard: `evil-youtube.com` must not pass as `youtube.com`.
+    #[test]
+    fn rejects_look_alike_domains() {
+        let header = cookie_header_from_netscape(
+            "\
+evil-youtube.com\tTRUE\t/\tTRUE\t1\tSAPISID\tevil\n\
+notgoogle.com\tTRUE\t/\tTRUE\t1\tSID\tevil2\n\
+accounts.google.com\tTRUE\t/\tTRUE\t1\t__Secure-3PAPISID\tgood\n",
+        );
+        assert_eq!(header, "__Secure-3PAPISID=good");
     }
 }
