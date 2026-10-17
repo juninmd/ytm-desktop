@@ -18,10 +18,12 @@ interchangeable:
 | Unlocks | Channels, videos, playlists, subscriptions, ratings **of the YouTube account** | The actual YouTube Music library, mixes, moods, YT Music playlists |
 | Stability | Versioned contract | Breaks whenever Google changes it |
 | Cost | Requires OAuth client + verification for public distribution | Requires the user's browser cookie; effectively a ToS grey zone |
-| Shipped here | ✅ yes | Signing helper only, unit-tested, not wired to a caller |
+| Shipped here | ✅ yes | ✅ yes — signing wired into the catalogue client for the personal library |
 
-This prototype implements the first door end to end and leaves the second as a visible, tested seam.
-Pretending the first door opens the whole library would be the dishonest part.
+This app implements the first door end to end for sign-in, and the second for the library: the
+OAuth device flow proves who you are, and the cookie + `SAPISIDHASH` path is what actually reads
+your YouTube Music library. Pretending the first door opens the whole library would be the dishonest
+part, so the cookie seam is explicit and lives behind its own screen.
 
 ## The flow that is implemented
 
@@ -141,8 +143,10 @@ Google states two things the interface must handle, both honoured in `SignInScre
 
 | Concern | File |
 |---|---|
-| Device flow, token exchange, refresh, vault, headers | `src-tauri/src/auth.rs` |
+| Device flow, token exchange, refresh, cookie vault, headers | `src-tauri/src/auth.rs` |
+| Catalogue client that consumes the cookie + signature | `src-tauri/src/innertube.rs` |
 | Commands exposed to the webview | `src-tauri/src/lib.rs` |
-| IPC boundary and the browser fallback | `src/lib/auth.ts` |
+| IPC boundary and the browser fallback | `src/lib/auth.ts`, `src/lib/music.ts` |
 | Flow state machine (polling, countdown, cancellation) | `src/hooks/useAuth.tsx` |
 | The screen itself | `src/components/SignInScreen.tsx` |
+| Where the cookie is entered | `src/components/LibraryCookieForm.tsx` |

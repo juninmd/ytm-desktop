@@ -81,7 +81,12 @@ function QueueRow({
         aria-label={`Tocar ${track.title}`}
         className="relative shrink-0"
       >
-        <Cover seed={track.albumId} title={track.album} className="size-10" />
+        <Cover
+          seed={track.albumId || track.album}
+          title={track.album}
+          src={track.thumbnail}
+          className="size-10"
+        />
         <span className="absolute inset-0 grid place-items-center rounded-md bg-black/60 opacity-0 transition group-hover:opacity-100">
           <Play className="size-4 fill-white text-white" />
         </span>

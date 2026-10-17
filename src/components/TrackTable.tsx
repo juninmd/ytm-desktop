@@ -1,11 +1,11 @@
 import { Clock, Heart, Play } from "lucide-react";
-import { resolveTracks } from "../data/catalog";
 import { Cover } from "./Cover";
 import { Eq } from "./ui/Eq";
 import { IconButton } from "./ui/IconButton";
 import { usePlayer } from "../hooks/usePlayer";
 import { cn } from "../lib/cn";
 import { formatTime } from "../lib/format";
+import type { Track } from "../types";
 
 const ROW = {
   "with-album":
@@ -15,7 +15,7 @@ const ROW = {
 } as const;
 
 type Props = {
-  trackIds: string[];
+  tracks: Track[];
   showPosition?: boolean;
   /** Hidden when every row belongs to the same release. */
   showAlbum?: boolean;
@@ -24,13 +24,12 @@ type Props = {
 };
 
 export function TrackTable({
-  trackIds,
+  tracks,
   showPosition = true,
   showAlbum = true,
   emptyLabel = "Nada por aqui ainda.",
 }: Props) {
   const { play, current, isLiked, toggleLike, state } = usePlayer();
-  const tracks = resolveTracks(trackIds);
   const row = showAlbum ? ROW["with-album"] : ROW["no-album"];
 
   if (tracks.length === 0) {
@@ -91,7 +90,12 @@ export function TrackTable({
               </span>
 
               <span role="cell" className="flex min-w-0 items-center gap-3">
-                <Cover seed={track.albumId} title={track.album} className="size-10" />
+                <Cover
+                  seed={track.albumId || track.album}
+                  title={track.album}
+                  src={track.thumbnail}
+                  className="size-10"
+                />
                 <button
                   type="button"
                   onClick={() => play(tracks, index)}
@@ -126,7 +130,7 @@ export function TrackTable({
                   <Heart className={cn("size-4", liked && "fill-accent text-accent")} />
                 </IconButton>
                 <span className="w-10 text-right text-xs text-muted tabular-nums">
-                  {formatTime(track.duration)}
+                  {track.duration > 0 ? formatTime(track.duration) : "--:--"}
                 </span>
               </span>
             </div>

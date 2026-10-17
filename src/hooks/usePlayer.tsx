@@ -5,23 +5,40 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
+  useState,
   type ReactNode,
 } from "react";
 import type { PlayerState, RepeatMode, Track } from "../types";
+import { isDesktop } from "../lib/auth";
+import { resolveStream } from "../lib/music";
 
 /**
- * Backend-agnostic playback state machine. Every action is pure; the real
- * audio sink (a YouTube IFrame or an mpv sidecar) only needs to react to
- * `current` + `isPlaying` + `seekTo`.
+ * The playback state machine, plus the audio sink.
+ *
+ * The reducer is pure and backend-agnostic. Two sinks drive it:
+ *
+ * * **Real audio** (desktop, track resolvable): a hidden `<audio>` element
+ *   streams the url yt-dlp resolved. Its `timeupdate` / `ended` events feed the
+ *   reducer, so the transport is genuinely playing sound.
+ * * **Simulated** (browser preview, or yt-dlp missing): the tick timer advances
+ *   the playhead so the UI can still be driven and reviewed.
+ *
+ * Which one is active is surfaced as `engine`, so the UI never has to guess.
  */
+
+export type PlaybackEngine = "sim" | "audio";
 
 type Action =
   | { type: "play"; queue: Track[]; startIndex: number }
   | { type: "toggle" }
   | { type: "tick"; delta: number }
+  | { type: "sync"; position: number }
+  | { type: "duration"; duration: number }
   | { type: "seek"; position: number }
   | { type: "next"; manual: boolean }
   | { type: "previous" }
+  | { type: "ended" }
   | { type: "volume"; value: number }
   | { type: "toggle-mute" }
   | { type: "shuffle" }
@@ -75,6 +92,7 @@ function initialState(): PlayerState {
     shuffle: false,
     repeat: preferences.repeat,
     liked: preferences.liked,
+    playToken: 0,
   };
 }
 
@@ -105,6 +123,8 @@ function reducer(state: PlayerState, action: Action): PlayerState {
         cursor: state.shuffle ? 0 : action.startIndex,
         isPlaying: true,
         position: 0,
+        // Bumped so replaying the current track reloads its audio element.
+        playToken: state.playToken + 1,
       };
     }
 
@@ -127,10 +147,27 @@ function reducer(state: PlayerState, action: Action): PlayerState {
       return { ...state, cursor: next, position: 0 };
     }
 
+    /** The real audio element reporting its playhead. */
+    case "sync":
+      return { ...state, position: action.position };
+
+    /** The real audio element reporting its duration, which the API omits. */
+    case "duration": {
+      const index = state.order[state.cursor];
+      const track = state.queue[index];
+      if (!track || !Number.isFinite(action.duration) || track.duration === action.duration) {
+        return state;
+      }
+      const queue = state.queue.slice();
+      queue[index] = { ...track, duration: action.duration };
+      return { ...state, queue };
+    }
+
     case "seek": {
       const track = currentTrack(state);
       if (!track) return state;
-      const position = Math.min(Math.max(action.position, 0), track.duration);
+      const max = track.duration > 0 ? track.duration : Number.POSITIVE_INFINITY;
+      const position = Math.min(Math.max(action.position, 0), max);
       return { ...state, position };
     }
 
@@ -148,6 +185,14 @@ function reducer(state: PlayerState, action: Action): PlayerState {
       const previous = step(state, -1);
       if (previous === null) return { ...state, position: 0 };
       return { ...state, cursor: previous, position: 0, isPlaying: true };
+    }
+
+    /** The real audio element finishing a track. */
+    case "ended": {
+      if (state.repeat === "one") return { ...state, position: 0 };
+      const next = step(state, 1);
+      if (next === null) return { ...state, isPlaying: false, position: 0 };
+      return { ...state, cursor: next, position: 0, isPlaying: true };
     }
 
     case "volume":
@@ -186,6 +231,8 @@ export type PlayerApi = {
   state: PlayerState;
   current: Track | null;
   upNext: Track[];
+  /** Whether sound is real (`audio`) or the transport is running simulated. */
+  engine: PlaybackEngine;
   play: (queue: Track[], startIndex?: number) => void;
   toggle: () => void;
   next: () => void;
@@ -207,14 +254,94 @@ const TICK_MS = 250;
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
+  const [engine, setEngine] = useState<PlaybackEngine>("sim");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Latest state, readable from audio callbacks without re-subscribing.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const current = state.queue[state.order[state.cursor]] ?? null;
+  const currentId = current?.id ?? null;
+  const useRealAudio = isDesktop() && currentId !== null;
+
+  // Load (or reload) the real stream whenever the track — or a replay — changes.
+  useEffect(() => {
+    if (!useRealAudio || !currentId) return;
+
+    let cancelled = false;
+    const audio = new Audio();
+    audio.preload = "auto";
+    audioRef.current = audio;
+    setEngine("sim");
+
+    const onTime = () => dispatch({ type: "sync", position: audio.currentTime });
+    const onMeta = () => dispatch({ type: "duration", duration: audio.duration });
+    const onEnded = () => {
+      const latest = stateRef.current;
+      dispatch({ type: "ended" });
+      if (latest.repeat === "one") {
+        audio.currentTime = 0;
+        void audio.play().catch(() => {});
+      }
+    };
+
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("loadedmetadata", onMeta);
+    audio.addEventListener("ended", onEnded);
+
+    void (async () => {
+      try {
+        const info = await resolveStream(currentId);
+        if (cancelled) return;
+        audio.volume = stateRef.current.volume;
+        audio.muted = stateRef.current.muted;
+        audio.src = info.url;
+        audio.load();
+        setEngine("audio");
+        if (stateRef.current.isPlaying) await audio.play().catch(() => {});
+      } catch {
+        // No real stream available (yt-dlp missing, offline): the simulated
+        // transport takes over instead of leaving the user with a dead player.
+        if (!cancelled) setEngine("sim");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("loadedmetadata", onMeta);
+      audio.removeEventListener("ended", onEnded);
+      audioRef.current = null;
+    };
+  }, [currentId, state.playToken, useRealAudio]);
+
+  // Play/pause is driven by the real element when one is loaded.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || engine !== "audio") return;
+    if (state.isPlaying) void audio.play().catch(() => {});
+    else audio.pause();
+  }, [state.isPlaying, engine]);
 
   useEffect(() => {
-    if (!state.isPlaying) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = state.volume;
+    audio.muted = state.muted;
+  }, [state.volume, state.muted, engine]);
+
+  // Simulated tick — only while no real audio is driving the playhead.
+  useEffect(() => {
+    if (!state.isPlaying || engine === "audio") return;
     const timer = window.setInterval(() => {
       dispatch({ type: "tick", delta: TICK_MS / 1000 });
     }, TICK_MS);
     return () => window.clearInterval(timer);
-  }, [state.isPlaying]);
+  }, [state.isPlaying, engine]);
 
   useEffect(() => {
     const preferences: Preferences = {
@@ -233,8 +360,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "play", queue, startIndex });
   }, []);
 
+  const seek = useCallback((seconds: number) => {
+    const audio = audioRef.current;
+    if (audio) {
+      try {
+        audio.currentTime = seconds;
+      } catch {
+        // Not seekable yet; the reducer still moves the scrubber.
+      }
+    }
+    dispatch({ type: "seek", position: seconds });
+  }, []);
+
   const api = useMemo<PlayerApi>(() => {
-    const current = state.queue[state.order[state.cursor]] ?? null;
     const upNext = state.order
       .slice(state.cursor + 1)
       .flatMap((index) => (state.queue[index] ? [state.queue[index]] : []));
@@ -243,11 +381,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       state,
       current,
       upNext,
+      engine,
       play,
       toggle: () => dispatch({ type: "toggle" }),
       next: () => dispatch({ type: "next", manual: true }),
       previous: () => dispatch({ type: "previous" }),
-      seek: (seconds) => dispatch({ type: "seek", position: seconds }),
+      seek,
       setVolume: (value) => dispatch({ type: "volume", value }),
       toggleMute: () => dispatch({ type: "toggle-mute" }),
       toggleShuffle: () => dispatch({ type: "shuffle" }),
@@ -256,7 +395,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       isLiked: (id) => state.liked.includes(id),
       isCurrent: (id) => (state.queue[state.order[state.cursor]]?.id ?? null) === id,
     };
-  }, [state, play]);
+  }, [state, current, engine, play, seek]);
 
   return <PlayerContext.Provider value={api}>{children}</PlayerContext.Provider>;
 }
