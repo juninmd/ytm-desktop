@@ -33,6 +33,9 @@ const SCOPES: &str = "openid email profile https://www.googleapis.com/auth/youtu
 
 const KEYRING_SERVICE: &str = "dev.ytm.desktop";
 const KEYRING_ACCOUNT: &str = "google-refresh-token";
+/// The `Cookie` header for the private InnerTube endpoints. Separate from the
+/// OAuth refresh token: the personal library is only reachable with cookies.
+const KEYRING_COOKIE_ACCOUNT: &str = "youtube-music-cookie";
 
 /// No credentials are hardcoded. Supply your own TV / limited-input client.
 const CLIENT_ID_ENV: &str = "YTM_GOOGLE_CLIENT_ID";
@@ -236,6 +239,64 @@ pub fn auth_sign_out() -> Result<(), String> {
     clear_refresh_token()
 }
 
+/// Stores the browser cookie used to reach the personal library.
+///
+/// The private InnerTube endpoints ignore bearer tokens; they authenticate with
+/// the same `Cookie` header the browser sends to `music.youtube.com`, signed
+/// per-request with `SAPISIDHASH`. This command is the seam that lets the user
+/// paste that header once; it lives only in the OS vault, like the refresh
+/// token.
+#[tauri::command]
+pub fn auth_save_cookies(cookies: String) -> Result<(), String> {
+    let trimmed = cookies.trim();
+    if trimmed.is_empty() {
+        return clear_cookie_header();
+    }
+    if !trimmed.contains("SAPISID") && !trimmed.contains("__Secure-3PAPISID") {
+        return Err(
+            "Cookie inválido: falta o valor SAPISID ou __Secure-3PAPISID.".to_string(),
+        );
+    }
+    cookie_entry()?
+        .set_password(trimmed)
+        .map_err(|error| format!("Não foi possível gravar o cookie no cofre do sistema: {error}"))
+}
+
+#[tauri::command]
+pub fn auth_clear_cookies() -> Result<(), String> {
+    clear_cookie_header()
+}
+
+/// Whether a library cookie is stored. Never returns the value itself.
+#[tauri::command]
+pub fn auth_cookie_status() -> bool {
+    matches!(load_cookie_header(), Ok(Some(_)))
+}
+
+pub(crate) fn load_cookie_header() -> Result<Option<String>, String> {
+    match cookie_entry()?.get_password() {
+        Ok(cookie) => Ok(Some(cookie)),
+        Err(keyring::v1::Error::NoEntry) => Ok(None),
+        Err(error) => Err(format!(
+            "Não foi possível ler o cookie do cofre do sistema: {error}"
+        )),
+    }
+}
+
+fn clear_cookie_header() -> Result<(), String> {
+    match cookie_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::v1::Error::NoEntry) => Ok(()),
+        Err(error) => Err(format!(
+            "Não foi possível remover o cookie do cofre do sistema: {error}"
+        )),
+    }
+}
+
+fn cookie_entry() -> Result<Entry, String> {
+    Entry::new(KEYRING_SERVICE, KEYRING_COOKIE_ACCOUNT)
+        .map_err(|error| format!("Cofre de credenciais do sistema indisponível: {error}"))
+}
+
 /// Signs a request the way the YouTube Music client does for the private
 /// InnerTube API: `SAPISIDHASH <seconds>_<sha1(seconds sapisid origin)>`.
 ///
@@ -291,7 +352,8 @@ fn refresh_form<'a>(
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-fn http() -> &'static reqwest::Client {
+/// Shared HTTP client for every network call the app makes.
+pub(crate) fn http() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
@@ -350,7 +412,7 @@ fn describe_failure(status: u16, detail: &str) -> String {
     format!("O Google recusou a solicitação ({status}): {detail}")
 }
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs())
