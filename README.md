@@ -30,8 +30,11 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 | Background playback & media keys | **Real** — the Media Session API feeds the OS media overlay and hardware keys |
 | Catalogue (home, search, album/playlist pages) | **Real** YouTube Music (InnerTube) on desktop; the preview filters a bundled mock |
 | Artwork | Real thumbnails when the response carries them, else a generated sleeve from a hash |
-| Search | **Real** catalogue search on desktop |
-| Sign-in | **Real** OAuth 2.0 device flow in Rust against Google |
+| Search | **Real** catalogue search on desktop, with the web player's result tabs (songs, albums, artists, playlists) |
+| Artist pages | **Real** — name, top songs and the artist's rows, from the catalogue |
+| Autoplay / radio | **Real** — when the queue ends, the track's radio continues it (toggleable in the queue) |
+| Stream cache | Resolved urls are cached until they expire; the next track is prefetched |
+| Sign-in | **Real** OAuth 2.0 device flow in Rust against Google; sign-out revokes the grant |
 | Personal library (playlists, liked songs, saved albums) | **Real**, once the browser cookie is connected — InnerTube needs `Cookie` + `SAPISIDHASH`, not a bearer token |
 | Liking a track | **Real** — writes through to the account when the library is connected (optimistic, with rollback); local-only otherwise |
 | Token / cookie storage | Real OS credential vault (`keyring`: Windows Credential Manager / Keychain / Secret Service) |
