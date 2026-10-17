@@ -1,4 +1,5 @@
 mod auth;
+mod browser_cookies;
 mod innertube;
 mod stream;
 
@@ -15,6 +16,8 @@ pub fn run() {
             auth::auth_save_cookies,
             auth::auth_clear_cookies,
             auth::auth_cookie_status,
+            browser_cookies::auth_import_browser_cookies,
+            browser_cookies::cookie_browsers,
             innertube::music_home,
             innertube::music_search,
             innertube::music_browse,

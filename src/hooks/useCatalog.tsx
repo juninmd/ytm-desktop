@@ -11,12 +11,15 @@ import {
 import {
   browseCollection,
   clearLibraryCookies,
+  cookieBrowsers,
   fetchHome,
   fetchLibrary,
+  importBrowserCookies,
   saveLibraryCookies,
   searchMusic,
   type CatalogPage,
   type HomeData,
+  type ImportOutcome,
   type LibraryData,
 } from "../lib/music";
 import { isDesktop } from "../lib/auth";
@@ -58,6 +61,10 @@ export type CatalogApi = {
   refresh: () => Promise<void>;
   saveCookies: (cookie: string) => Promise<void>;
   clearCookies: () => Promise<void>;
+  /** Browsers whose cookie store can be read, per the Rust backend. */
+  browsers: string[];
+  /** Reads the cookie from a browser and reloads the library. */
+  importCookies: (browser: string) => Promise<ImportOutcome>;
 };
 
 const CatalogContext = createContext<CatalogApi | null>(null);
@@ -71,6 +78,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const [library, setLibrary] = useState<LibraryData | null>(null);
   const [status, setStatus] = useState<CatalogApi["status"]>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [browsers, setBrowsers] = useState<string[]>([]);
 
   const mapsRef = useRef(maps);
   mapsRef.current = maps;
@@ -123,6 +131,18 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  // The browsers the backend can read cookies from, so the form offers only
+  // real options.
+  useEffect(() => {
+    let cancelled = false;
+    void cookieBrowsers().then((list) => {
+      if (!cancelled) setBrowsers(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const ensureCollection = useCallback(
     async (id: string): Promise<LoadedCollection | undefined> => {
       const existing = mapsRef.current.collections[id];
@@ -168,6 +188,15 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     setLibrary({ available: false, collections: [], tracks: [] });
   }, []);
 
+  const importCookies = useCallback(
+    async (browser: string) => {
+      const outcome = await importBrowserCookies(browser);
+      await loadLibrary();
+      return outcome;
+    },
+    [loadLibrary],
+  );
+
   const api = useMemo<CatalogApi>(() => {
     const { collections, tracks } = maps;
 
@@ -200,8 +229,10 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       refresh,
       saveCookies,
       clearCookies,
+      browsers,
+      importCookies,
     };
-  }, [maps, home, library, status, error, ensureCollection, search, refresh, saveCookies, clearCookies]);
+  }, [maps, home, library, status, error, browsers, ensureCollection, search, refresh, saveCookies, clearCookies, importCookies]);
 
   return <CatalogContext.Provider value={api}>{children}</CatalogContext.Provider>;
 }
