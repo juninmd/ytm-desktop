@@ -12,8 +12,10 @@
 //! next to the app, then from `PATH`. When none exists the player falls back to
 //! the simulated transport instead of failing — see `resolve`.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
 use serde::Serialize;
 
@@ -61,8 +63,15 @@ fn candidates() -> Vec<PathBuf> {
 }
 
 fn find_ytdlp() -> Option<PathBuf> {
+    // Once located, the answer does not change for the life of the process, so
+    // the `--version` probe (a process spawn) runs at most once.
+    if let Some(resolved) = RESOLVED.get() {
+        return Some(resolved.clone());
+    }
+
     for candidate in candidates() {
         if candidate.is_file() {
+            let _ = RESOLVED.set(candidate.clone());
             return Some(candidate);
         }
     }
@@ -75,12 +84,17 @@ fn find_ytdlp() -> Option<PathBuf> {
             .map(|output| output.status.success())
             .unwrap_or(false)
         {
-            return Some(PathBuf::from(name));
+            let path = PathBuf::from(name);
+            let _ = RESOLVED.set(path.clone());
+            return Some(path);
         }
     }
 
     None
 }
+
+/// Remembers the located binary, so the probe runs once.
+static RESOLVED: OnceLock<PathBuf> = OnceLock::new();
 
 /// Where the browser-cookie import looks for `yt-dlp` (shared with the
 /// resolver, since it is the same binary).
@@ -114,9 +128,80 @@ pub fn music_resolver_status() -> ResolverStatus {
 ///
 /// `async` (via `async_runtime`) because it blocks on a `yt-dlp` child process:
 /// a synchronous command would stall the webview's event loop for the length of
-/// the extraction.
+/// the extraction. Resolved urls are cached until they expire, so a replay or a
+/// prefetched next track costs nothing.
 #[tauri::command(async)]
 pub fn music_stream(track_id: String) -> Result<StreamInfo, String> {
+    if let Some(info) = cached(&track_id) {
+        return Ok(info);
+    }
+    let info = resolve(&track_id)?;
+    remember(&info);
+    Ok(info)
+}
+
+/// Warms the cache for a track the player is likely to reach next. Errors are
+/// swallowed: a prefetch is an optimisation, never a failure.
+#[tauri::command(async)]
+pub fn music_prefetch(track_id: String) -> bool {
+    if cached(&track_id).is_some() {
+        return true;
+    }
+    match resolve(&track_id) {
+        Ok(info) => {
+            remember(&info);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Drops every cached stream (e.g. after a resolver change).
+#[tauri::command]
+pub fn music_clear_stream_cache() {
+    cache().lock().map(|mut map| map.clear()).ok();
+}
+
+struct CachedStream {
+    info: StreamInfo,
+    /// Unix seconds after which the url must not be reused.
+    valid_until: u64,
+}
+
+/// googlevideo urls are valid for roughly six hours; keep a safety margin.
+const URL_LIFETIME_SECONDS: u64 = 6 * 60 * 60;
+const URL_SAFETY_MARGIN_SECONDS: u64 = 5 * 60;
+
+fn cache() -> &'static Mutex<HashMap<String, CachedStream>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, CachedStream>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cached(track_id: &str) -> Option<StreamInfo> {
+    let now = crate::auth::now();
+    let map = cache().lock().ok()?;
+    let entry = map.get(track_id)?;
+    if entry.valid_until > now {
+        Some(entry.info.clone())
+    } else {
+        None
+    }
+}
+
+fn remember(info: &StreamInfo) {
+    if let Ok(mut map) = cache().lock() {
+        let valid_until = crate::auth::now() + URL_LIFETIME_SECONDS - URL_SAFETY_MARGIN_SECONDS;
+        map.insert(
+            info.track_id.clone(),
+            CachedStream {
+                info: info.clone(),
+                valid_until,
+            },
+        );
+    }
+}
+
+fn resolve(track_id: &str) -> Result<StreamInfo, String> {
     let binary = find_ytdlp().ok_or_else(|| {
         "yt-dlp não encontrado, então o áudio real não pode ser resolvido.".to_string()
     })?;
@@ -159,9 +244,8 @@ pub fn music_stream(track_id: String) -> Result<StreamInfo, String> {
     Ok(StreamInfo {
         url: url.to_string(),
         ext: ext.trim().to_string(),
-        // googlevideo urls are valid for roughly six hours.
-        expires_in: 6 * 60 * 60,
-        track_id,
+        expires_in: URL_LIFETIME_SECONDS,
+        track_id: track_id.to_string(),
     })
 }
 
@@ -199,5 +283,22 @@ mod tests {
         assert_eq!(info.track_id, "uSFXOBaqiR8");
         assert!(!info.ext.is_empty());
         assert!(info.url.contains("googlevideo.com"));
+    }
+
+    // The cache is what makes a prefetched next track free; the pure part is
+    // worth pinning down without a network call.
+    #[test]
+    fn a_resolved_stream_is_cached() {
+        let key = "cache-key-unit-test";
+        assert!(cached(key).is_none(), "cache starts empty for a fresh key");
+        remember(&StreamInfo {
+            url: "https://x.googlevideo.com/a".to_string(),
+            ext: "m4a".to_string(),
+            expires_in: URL_LIFETIME_SECONDS,
+            track_id: key.to_string(),
+        });
+        assert_eq!(cached(key).expect("hit").url, "https://x.googlevideo.com/a");
+        music_clear_stream_cache();
+        assert!(cached(key).is_none(), "clearing drops the entry");
     }
 }

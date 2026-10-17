@@ -85,6 +85,14 @@ pub struct HomeData {
 pub struct CatalogPage {
     pub collections: Vec<Collection>,
     pub tracks: Vec<Track>,
+    /// Extra rows of cards (e.g. an artist's albums, "You might also like").
+    pub sections: Vec<Shelf>,
+    /// Token for the next page, when the API exposes one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuation: Option<String>,
+    /// Page title (artist name, album name, …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -181,14 +189,65 @@ pub async fn music_home() -> Result<HomeData, String> {
     Ok(parse_home(&payload))
 }
 
-/// Real catalogue search.
+/// Real catalogue search. `filter` narrows the result type the way the tabs in
+/// the web player do: `songs`, `albums`, `artists`, `playlists`, or anything
+/// else for all types.
 #[tauri::command]
-pub async fn music_search(query: String) -> Result<CatalogPage, String> {
-    let payload = post("search", json!({ "context": context(), "query": query })).await?;
+pub async fn music_search(query: String, filter: Option<String>) -> Result<CatalogPage, String> {
+    let mut body = json!({ "context": context(), "query": query });
+    if let Some(params) = search_params(filter.as_deref()) {
+        body["params"] = json!(params);
+    }
+    let payload = post("search", body).await?;
     Ok(parse_page(&payload, None))
 }
 
-/// Opens an album (`MPREb_…`), a playlist (`VL…`) or any browse id.
+/// The filter tokens the web player sends for its result tabs.
+fn search_params(filter: Option<&str>) -> Option<&'static str> {
+    match filter {
+        Some("songs") => Some("EgWKAQIIAWoKEAkQBRAKEAMQBA=="),
+        Some("albums") => Some("EgWKAQIYAWoKEAkQBRAKEAMQBA=="),
+        Some("artists") => Some("EgWKAQIgAWoKEAkQBRAKEAMQBA=="),
+        Some("playlists") => Some("EgWKAQIoAWoKEAkQBRAKEAMQBA=="),
+        _ => None,
+    }
+}
+
+/// Fetches the next page from a continuation token (browse or search).
+#[tauri::command]
+pub async fn music_more(continuation: String, search: Option<bool>) -> Result<CatalogPage, String> {
+    let endpoint = if search.unwrap_or(false) {
+        "search"
+    } else {
+        "browse"
+    };
+    let payload = post(
+        endpoint,
+        json!({ "context": context(), "continuation": continuation }),
+    )
+    .await?;
+    Ok(parse_page(&payload, None))
+}
+
+/// The endless "radio" that follows a track, so the queue never just stops.
+#[tauri::command]
+pub async fn music_radio(video_id: String) -> Result<Vec<Track>, String> {
+    let playlist_id = format!("RDAMVM{video_id}");
+    let payload = post(
+        "next",
+        json!({
+            "context": context(),
+            "videoId": video_id,
+            "playlistId": playlist_id,
+            "isAudioOnly": true,
+        }),
+    )
+    .await?;
+    Ok(radio_tracks(&payload))
+}
+
+/// Opens an album (`MPREb_…`), a playlist (`VL…`), an artist (`UC…`) or any
+/// browse id.
 #[tauri::command]
 pub async fn music_browse(id: String) -> Result<CatalogPage, String> {
     let browse_id = normalise_browse_id(&id);
@@ -197,6 +256,46 @@ pub async fn music_browse(id: String) -> Result<CatalogPage, String> {
         json!({ "context": context(), "browseId": browse_id }),
     )
     .await?;
+
+    // Artist pages have no album-style microformat; the name is in the
+    // immersive header. Represent the artist as a collection whose tracks are
+    // its top songs, and leave the albums/playlists to the page's carousels.
+    if id.starts_with("UC") {
+        let title = payload
+            .get("header")
+            .and_then(|header| header.get("musicImmersiveHeaderRenderer"))
+            .and_then(|header| header.get("title"))
+            .map(text_of)
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                payload
+                    .get("microformat")
+                    .and_then(|micro| micro.get("microformatDataRenderer"))
+                    .and_then(|data| data.get("title"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "Artista".to_string());
+
+        let mut page = parse_page(&payload, None);
+        page.title = Some(title.clone());
+        let track_ids = page.tracks.iter().map(|track| track.id.clone()).collect();
+        page.collections.insert(
+            0,
+            Collection {
+                id: id.clone(),
+                kind: "artist".to_string(),
+                format: "artist".to_string(),
+                title,
+                subtitle: "Artista".to_string(),
+                description: None,
+                year: None,
+                track_ids,
+                thumbnail: best_thumbnail(&payload),
+            },
+        );
+        return Ok(page);
+    }
 
     let (title, subtitle, kind) = microformat(&payload);
     let mut page = parse_page(&payload, Some((title.clone(), subtitle, kind)));
@@ -225,11 +324,24 @@ pub async fn music_library() -> Result<LibraryStatus, String> {
         });
     }
 
-    let payload = post(
+    // The three library pages are independent: fetch them concurrently so the
+    // library loads in the time of the slowest one, not their sum.
+    let playlists_fut = tauri::async_runtime::spawn(post(
         "browse",
         json!({ "context": context(), "browseId": "FEmusic_liked_playlists" }),
-    )
-    .await?;
+    ));
+    let albums_fut = tauri::async_runtime::spawn(post(
+        "browse",
+        json!({ "context": context(), "browseId": "FEmusic_liked_albums" }),
+    ));
+    let liked_fut = tauri::async_runtime::spawn(post(
+        "browse",
+        json!({ "context": context(), "browseId": "VLLM" }),
+    ));
+
+    let payload = playlists_fut
+        .await
+        .map_err(|error| format!("Falha ao buscar as playlists: {error}"))??;
 
     let mut collections = Vec::new();
     let mut tracks = Vec::new();
@@ -245,12 +357,7 @@ pub async fn music_library() -> Result<LibraryStatus, String> {
     }
 
     // Saved albums live behind a different browse id.
-    if let Ok(albums) = post(
-        "browse",
-        json!({ "context": context(), "browseId": "FEmusic_liked_albums" }),
-    )
-    .await
-    {
+    if let Ok(Ok(albums)) = albums_fut.await {
         for item in collect(&albums, "musicTwoRowItemRenderer") {
             if let Some(collection) = two_row_collection(item) {
                 collections.push(collection);
@@ -259,12 +366,7 @@ pub async fn music_library() -> Result<LibraryStatus, String> {
     }
 
     // Liked songs are their own playlist ("VLLM").
-    if let Ok(liked) = post(
-        "browse",
-        json!({ "context": context(), "browseId": "VLLM" }),
-    )
-    .await
-    {
+    if let Ok(Ok(liked)) = liked_fut.await {
         let mut liked_tracks = Vec::new();
         for item in collect(&liked, "musicResponsiveListItemRenderer") {
             if let Some(track) = list_track(item, "Músicas curtidas", "VLLM", None) {
@@ -574,6 +676,8 @@ fn two_row_collection(item: &Value) -> Option<Collection> {
     let subtitle = item.get("subtitle").map(text_of).unwrap_or_default();
     let kind = if id.starts_with("MPRE") || id.starts_with("OLAK") {
         "album"
+    } else if id.starts_with("UC") {
+        "artist"
     } else {
         "playlist"
     };
@@ -649,12 +753,12 @@ fn parse_page(payload: &Value, header: Option<(String, String, String)>) -> Cata
             .find(|token| PAGE_TYPES.contains(&token.as_str()));
 
         match page_type.map(String::as_str) {
-            Some("Album") | Some("Playlist") => {
+            Some("Album") | Some("Playlist") | Some("Artist") => {
                 if let Some(collection) = list_collection(item) {
                     collections.push(collection);
                 }
             }
-            Some("Artist") | Some("Podcast") | Some("Profile") | Some("Episode") => {}
+            Some("Podcast") | Some("Profile") | Some("Episode") => {}
             _ => {
                 if let Some(track) =
                     list_track(item, &album_title, &album_id, album_thumb.as_deref())
@@ -675,7 +779,8 @@ fn parse_page(payload: &Value, header: Option<(String, String, String)>) -> Cata
     // cards that came out of the body first, so the header (which has no id yet)
     // survives the identity filter below.
     dedupe(&mut collections);
-    if let Some((title, subtitle, format)) = header {
+    let title = header.as_ref().map(|(title, _, _)| title.clone());
+    if let Some((title_value, subtitle, format)) = header {
         let track_ids = tracks.iter().map(|track| track.id.clone()).collect();
         collections.insert(
             0,
@@ -687,7 +792,7 @@ fn parse_page(payload: &Value, header: Option<(String, String, String)>) -> Cata
                     "album".to_string()
                 },
                 format,
-                title,
+                title: title_value,
                 subtitle,
                 description: None,
                 year: None,
@@ -700,7 +805,102 @@ fn parse_page(payload: &Value, header: Option<(String, String, String)>) -> Cata
     CatalogPage {
         collections,
         tracks,
+        sections: shelves_of(payload),
+        continuation: continuation_of(payload),
+        title,
     }
+}
+
+/// Card rows from the carousels ("You might also like", an artist's albums).
+fn shelves_of(payload: &Value) -> Vec<Shelf> {
+    let mut shelves = Vec::new();
+    for carousel in collect(payload, "musicCarouselShelfRenderer") {
+        let title = carousel
+            .get("header")
+            .and_then(|header| header.get("musicCarouselShelfBasicHeaderRenderer"))
+            .and_then(|header| header.get("title"))
+            .map(text_of)
+            .unwrap_or_default();
+        if title.is_empty() {
+            continue;
+        }
+        let mut ids = Vec::new();
+        for item in collect(carousel, "musicTwoRowItemRenderer") {
+            if let Some(collection) = two_row_collection(item) {
+                ids.push(collection.id);
+            }
+        }
+        if !ids.is_empty() {
+            shelves.push(Shelf {
+                title,
+                subtitle: None,
+                ids,
+            });
+        }
+    }
+    shelves
+}
+
+/// The next-page token, scoped to the shelf that actually holds the rows — the
+/// page also carries continuation tokens for unrelated carousels.
+fn continuation_of(payload: &Value) -> Option<String> {
+    for key in [
+        "musicPlaylistShelfRenderer",
+        "musicShelfRenderer",
+        "musicPlaylistShelfContinuation",
+        "musicShelfContinuation",
+    ] {
+        for shelf in collect(payload, key) {
+            let token = shelf
+                .get("continuations")
+                .and_then(Value::as_array)
+                .and_then(|list| {
+                    list.iter()
+                        .find_map(|entry| entry.get("nextContinuationData"))
+                })
+                .and_then(|data| data.get("continuation"))
+                .and_then(Value::as_str);
+            if let Some(token) = token {
+                return Some(token.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Tracks out of a `/next` radio response.
+fn radio_tracks(payload: &Value) -> Vec<Track> {
+    let mut tracks = Vec::new();
+    for item in collect(payload, "playlistPanelVideoRenderer") {
+        let Some(id) = item.get("videoId").and_then(Value::as_str) else {
+            continue;
+        };
+        let byline = item.get("longBylineText").map(text_of).unwrap_or_default();
+        let mut parts = byline.split(" • ");
+        let artist = parts.next().unwrap_or_default().to_string();
+        let album = parts.next().unwrap_or_default().to_string();
+        let year = parts
+            .next()
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(0);
+        let duration = item
+            .get("lengthText")
+            .map(text_of)
+            .and_then(|value| clock(&value))
+            .unwrap_or(0.0);
+        tracks.push(Track {
+            id: id.to_string(),
+            title: item.get("title").map(text_of).unwrap_or_default(),
+            artist,
+            album,
+            album_id: String::new(),
+            duration,
+            year,
+            plays: String::new(),
+            thumbnail: best_thumbnail(item).unwrap_or_default(),
+        });
+    }
+    tracks
 }
 
 /// Collection card from a search/list item (`Album` / `Playlist` rows).
@@ -728,10 +928,10 @@ fn list_collection(item: &Value) -> Option<Collection> {
         .cloned()
         .unwrap_or_default();
 
-    let kind = if page_type == "Album" {
-        "album"
-    } else {
-        "playlist"
+    let kind = match page_type.as_str() {
+        "Album" => "album",
+        "Artist" => "artist",
+        _ => "playlist",
     };
 
     Some(Collection {
@@ -924,16 +1124,82 @@ mod tests {
         assert_eq!(home.shelves[0].title, "Quick picks");
     }
 
-    /// Hits the real InnerTube API. Opt-in (`YTM_LIVE=1`) so CI stays offline and
-    /// deterministic; run it locally to confirm the parser still matches reality
-    /// when YouTube changes a response shape.
+    #[test]
+    fn maps_search_filters_to_the_web_player_tokens() {
+        assert_eq!(
+            search_params(Some("songs")),
+            Some("EgWKAQIIAWoKEAkQBRAKEAMQBA==")
+        );
+        assert_eq!(
+            search_params(Some("artists")),
+            Some("EgWKAQIgAWoKEAkQBRAKEAMQBA==")
+        );
+        assert!(search_params(Some("all")).is_none());
+        assert!(search_params(None).is_none());
+    }
+
+    #[test]
+    fn reads_the_continuation_scoped_to_the_track_shelf() {
+        let payload = serde_json::from_str(CONTINUATION_PAGE).unwrap();
+        assert_eq!(continuation_of(&payload).as_deref(), Some("NEXT-TOKEN"));
+    }
+
+    #[test]
+    fn parses_radio_panel_tracks() {
+        let payload = serde_json::from_str(RADIO_PAGE).unwrap();
+        let tracks = radio_tracks(&payload);
+
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0].id, "r1");
+        assert_eq!(tracks[0].title, "Radio One");
+        assert_eq!(tracks[0].artist, "Artist");
+        assert_eq!(tracks[0].album, "Album");
+        assert_eq!(tracks[0].year, 2001);
+        assert_eq!(tracks[0].duration, 165.0);
+        assert_eq!(tracks[1].id, "r2");
+    }
+
+    const CONTINUATION_PAGE: &str = r#"{
+      "contents": {
+        "musicCarouselShelfRenderer": {
+          "header": { "musicCarouselShelfBasicHeaderRenderer": { "title": { "runs": [ { "text": "Related" } ] } } },
+          "continuations": [ { "nextContinuationData": { "continuation": "CAROUSEL-TOKEN" } } ],
+          "contents": []
+        },
+        "musicPlaylistShelfRenderer": {
+          "contents": [],
+          "continuations": [ { "nextContinuationData": { "continuation": "NEXT-TOKEN" } } ]
+        }
+      }
+    }"#;
+
+    const RADIO_PAGE: &str = r#"{
+      "contents": { "playlistPanelRenderer": { "contents": [
+        { "playlistPanelVideoRenderer": {
+          "videoId": "r1",
+          "title": { "runs": [ { "text": "Radio One" } ] },
+          "longBylineText": { "runs": [
+            { "text": "Artist" }, { "text": " • " }, { "text": "Album" }, { "text": " • " }, { "text": "2001" } ] },
+          "lengthText": { "runs": [ { "text": "2:45" } ] },
+          "thumbnail": { "thumbnails": [ { "url": "https://x.test/a.jpg" } ] }
+        } },
+        { "playlistPanelVideoRenderer": {
+          "videoId": "r2",
+          "title": { "runs": [ { "text": "Radio Two" } ] },
+          "longBylineText": { "runs": [ { "text": "Other" } ] },
+          "lengthText": { "runs": [ { "text": "3:00" } ] }
+        } }
+      ] } }
+    }"#;
+
+    /// Opt-in live check (`YTM_LIVE=1`): the parser against the real API.
     #[test]
     fn live_endpoints_match_the_parser() {
         if std::env::var("YTM_LIVE").is_err() {
             return;
         }
 
-        let search = tauri::async_runtime::block_on(music_search("daft punk".to_string()))
+        let search = tauri::async_runtime::block_on(music_search("daft punk".to_string(), None))
             .expect("live search");
         assert!(!search.tracks.is_empty(), "search returned no tracks");
         assert!(
@@ -957,6 +1223,35 @@ mod tests {
 
         let home = tauri::async_runtime::block_on(music_home()).expect("home");
         assert!(!home.shelves.is_empty(), "home returned no shelves");
+
+        // Filters narrow the search the way the web player's tabs do.
+        let artists = tauri::async_runtime::block_on(music_search(
+            "daft punk".to_string(),
+            Some("artists".to_string()),
+        ))
+        .expect("filtered search");
+        assert!(
+            artists.collections.iter().any(|c| c.kind == "artist"),
+            "artist filter returned no artists"
+        );
+
+        // An artist page carries its name and top songs.
+        let artist_id = artists
+            .collections
+            .iter()
+            .find(|c| c.kind == "artist")
+            .unwrap()
+            .id
+            .clone();
+        let artist = tauri::async_runtime::block_on(music_browse(artist_id)).expect("artist page");
+        assert_eq!(artist.collections[0].kind, "artist");
+        assert!(artist.title.is_some(), "artist page had no title");
+        assert!(!artist.tracks.is_empty(), "artist page had no top songs");
+
+        // The radio that keeps the queue going.
+        let radio = tauri::async_runtime::block_on(music_radio(first.id.clone())).expect("radio");
+        assert!(!radio.is_empty(), "radio returned no tracks");
+        assert!(radio.iter().all(|track| !track.id.is_empty()));
     }
 
     // --- fixtures: real responses, trimmed to the fields the parser reads ---

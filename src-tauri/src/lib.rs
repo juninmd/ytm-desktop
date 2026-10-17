@@ -18,10 +18,14 @@ pub fn run() {
             browser_cookies::cookie_browsers,
             innertube::music_home,
             innertube::music_search,
+            innertube::music_more,
+            innertube::music_radio,
             innertube::music_browse,
             innertube::music_library,
             innertube::music_rate,
             stream::music_stream,
+            stream::music_prefetch,
+            stream::music_clear_stream_cache,
             stream::music_resolver_status,
         ])
         .run(tauri::generate_context!())

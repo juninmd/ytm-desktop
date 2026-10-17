@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import { CollectionView } from "./components/CollectionView";
+import { ArtistView } from "./components/ArtistView";
 import { HomeView } from "./components/HomeView";
 import { LibraryView } from "./components/LibraryView";
 import { PlayerBar } from "./components/PlayerBar";
@@ -13,14 +14,18 @@ import { Logo } from "./components/ui/Logo";
 import { CatalogProvider, useCatalog } from "./hooks/useCatalog";
 import { useAuth } from "./hooks/useAuth";
 import { PlayerProvider, usePlayer } from "./hooks/usePlayer";
+import { fetchRadio } from "./lib/music";
 import type { Collection, View } from "./types";
 
 /** A placeholder for a collection the store has not indexed yet, keyed by id. */
-function STUB_COLLECTION(id: string, kind: "album" | "playlist"): Collection {
+function STUB_COLLECTION(
+  id: string,
+  kind: "album" | "playlist" | "artist",
+): Collection {
   return {
     id,
     kind,
-    format: kind === "album" ? "album" : "playlist",
+    format: kind === "album" ? "album" : kind === "artist" ? "artist" : "playlist",
     title: "",
     subtitle: "",
     trackIds: [],
@@ -81,7 +86,9 @@ function Workspace({
     navigate(
       collection.kind === "album"
         ? { kind: "album", id: collection.id }
-        : { kind: "playlist", id: collection.id },
+        : collection.kind === "artist"
+          ? { kind: "artist", id: collection.id }
+          : { kind: "playlist", id: collection.id },
     );
 
   const goBack = () => {
@@ -152,6 +159,26 @@ function Workspace({
     syncLiked(likedTrackIds);
   }, [likedTrackIds, syncLiked]);
 
+  // When the queue runs out with autoplay on, continue with the track's radio —
+  // the behaviour people expect from YouTube Music.
+  useEffect(() => {
+    if (!player.state.needsRadio) return;
+    const seed = player.current?.id;
+    if (!seed) return;
+    let cancelled = false;
+    void fetchRadio(seed)
+      .then((tracks) => {
+        if (!cancelled) player.appendRadio(tracks ?? []);
+      })
+      .catch(() => {
+        // No radio available: clear the flag so the player just stops.
+        if (!cancelled) player.appendRadio([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [player.state.needsRadio, player.current?.id, player.appendRadio]);
+
   const collection =
     view.kind === "album" || view.kind === "playlist" ? getCollection(view.id) : undefined;
 
@@ -160,12 +187,14 @@ function Workspace({
     content = <SearchView query={query} onOpen={openCollection} />;
   } else if (view.kind === "library") {
     content = <LibraryView onOpen={openCollection} />;
+  } else if (view.kind === "artist") {
+    content = <ArtistView id={view.id} onOpen={openCollection} />;
   } else if (collection) {
-    content = <CollectionView collection={collection} />;
+    content = <CollectionView collection={collection} onOpen={openCollection} />;
   } else if (view.kind === "album" || view.kind === "playlist") {
     // A just-opened collection that the store has not indexed yet. The view
     // resolves it from the id itself.
-    content = <CollectionView collection={STUB_COLLECTION(view.id, view.kind)} />;
+    content = <CollectionView collection={STUB_COLLECTION(view.id, view.kind)} onOpen={openCollection} />;
   } else {
     content = <HomeView onOpen={openCollection} />;
   }

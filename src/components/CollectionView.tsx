@@ -3,6 +3,7 @@ import { Clock3, Download, Heart, Loader2, Play, Shuffle } from "lucide-react";
 import { useCatalog } from "../hooks/useCatalog";
 import { Cover } from "./Cover";
 import { TrackTable } from "./TrackTable";
+import { CollectionCard } from "./CollectionCard";
 import { IconButton } from "./ui/IconButton";
 import { usePlayCollection } from "../hooks/usePlayCollection";
 import { usePlayer } from "../hooks/usePlayer";
@@ -16,13 +17,22 @@ const FORMAT_LABEL: Record<Collection["format"], string> = {
   ep: "EP",
   single: "Single",
   playlist: "Playlist",
+  artist: "Artista",
 };
 
-export function CollectionView({ collection: initial }: { collection: Collection }) {
+export function CollectionView({
+  collection: initial,
+  onOpen,
+}: {
+  collection: Collection;
+  onOpen: (collection: Collection) => void;
+}) {
   const playCollection = usePlayCollection();
-  const { resolveTracks, ensureCollection, getCollection } = useCatalog();
+  const { resolveTracks, ensureCollection, getCollection, getSections, hasMore, loadMore } =
+    useCatalog();
   const { state, toggleShuffle, isLiked, toggleLike } = usePlayer();
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   /** Guards against re-fetching as the store's callbacks change identity. */
@@ -173,6 +183,43 @@ export function CollectionView({ collection: initial }: { collection: Collection
           />
         )}
       </div>
+
+      {hasMore(collection.id) && (
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            onClick={() => {
+              setLoadingMore(true);
+              void loadMore(collection.id).finally(() => setLoadingMore(false));
+            }}
+            disabled={loadingMore}
+            className="flex items-center gap-2 rounded-full border border-line px-5 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg disabled:opacity-40"
+          >
+            {loadingMore && <Loader2 className="size-4 animate-spin" />}
+            Carregar mais
+          </button>
+        </div>
+      )}
+
+      {getSections(collection.id).map((section) => (
+        <section key={section.title} className="mt-10 px-6">
+          <h2 className="text-xl font-bold tracking-tight">{section.title}</h2>
+          <div className="no-scrollbar -mx-2 mt-3 flex gap-1 overflow-x-auto px-2 pb-1">
+            {section.ids.map((id) => {
+              const card = getCollection(id);
+              if (!card) return null;
+              return (
+                <CollectionCard
+                  key={`${section.title}-${id}`}
+                  collection={card}
+                  onOpen={onOpen}
+                  className="w-[172px] shrink-0"
+                />
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
