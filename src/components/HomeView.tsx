@@ -14,7 +14,7 @@ function greeting(hour: number): string {
 
 export function HomeView({ onOpen }: { onOpen: (collection: Collection) => void }) {
   const playCollection = usePlayCollection();
-  const { quickPicks, shelves, getCollection, status, error } = useCatalog();
+  const { quickPicks, shelves, getCollection, status, error, refresh } = useCatalog();
 
   if (status === "loading") {
     return (
@@ -29,6 +29,13 @@ export function HomeView({ onOpen }: { onOpen: (collection: Collection) => void 
       <div className="grid place-items-center px-6 py-24 text-center">
         <p className="text-lg font-semibold">Não foi possível carregar o catálogo</p>
         <p className="mt-1 max-w-[46ch] text-sm text-muted">{error}</p>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="mt-5 rounded-full border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
+        >
+          Tentar de novo
+        </button>
       </div>
     );
   }

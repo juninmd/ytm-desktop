@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { TriangleAlert } from "lucide-react";
 import { CollectionView } from "./components/CollectionView";
 import { HomeView } from "./components/HomeView";
 import { LibraryView } from "./components/LibraryView";
@@ -63,7 +64,8 @@ function Workspace({
   onSignOut: () => void;
 }) {
   const player = usePlayer();
-  const { getCollection } = useCatalog();
+  const { getCollection, likedTrackIds } = useCatalog();
+  const { syncLiked, notice, dismissNotice } = player;
   const [view, setView] = useState<View>({ kind: "home" });
   const [history, setHistory] = useState<View[]>([]);
   const [query, setQuery] = useState("");
@@ -145,6 +147,11 @@ function Workspace({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Seed the local hearts from the account's liked songs once the library loads.
+  useEffect(() => {
+    syncLiked(likedTrackIds);
+  }, [likedTrackIds, syncLiked]);
+
   const collection =
     view.kind === "album" || view.kind === "playlist" ? getCollection(view.id) : undefined;
 
@@ -176,6 +183,18 @@ function Workspace({
             queueOpen={queueOpen}
             onToggleQueue={() => setQueueOpen((open) => !open)}
           />
+          {player.resolverAvailable === false && (
+            <div className="flex items-start gap-2.5 border-b border-line bg-accent/8 px-4 py-2.5 text-xs">
+              <TriangleAlert className="mt-px size-4 shrink-0 text-accent" />
+              <p className="text-fg/85">
+                <span className="font-medium">Áudio real indisponível:</span> o{" "}
+                <code className="text-fg">yt-dlp</code> não foi encontrado, então o transporte está
+                simulado (sem som). Instale-o com{" "}
+                <code className="text-fg">winget install yt-dlp.yt-dlp</code> e reabra o app para
+                tocar de verdade.
+              </p>
+            </div>
+          )}
           <div className="scroll-area min-h-0 flex-1 overflow-y-auto">{content}</div>
         </main>
 
@@ -187,6 +206,23 @@ function Workspace({
       <div className="sr-only" aria-live="polite">
         {player.current ? `Tocando ${player.current.title}, de ${player.current.artist}` : ""}
       </div>
+
+      {notice && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[104px] z-50 flex justify-center px-4">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-line bg-raised px-4 py-2 text-xs text-fg shadow-[0_10px_30px_rgb(0_0_0/0.5)]">
+            <TriangleAlert className="size-3.5 shrink-0 text-accent" />
+            {notice}
+            <button
+              type="button"
+              onClick={dismissNotice}
+              aria-label="Fechar aviso"
+              className="text-subtle transition-colors hover:text-fg"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

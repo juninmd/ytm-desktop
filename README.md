@@ -25,13 +25,15 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 
 | Area | Status |
 |---|---|
-| Playback transport, queue, shuffle, repeat, volume, likes | Real state machine; drives a real `<audio>` sink on desktop |
+| Playback transport, queue, shuffle, repeat, volume | Real state machine; drives a real `<audio>` sink on desktop |
 | Audio | **Real** — each track is resolved through `yt-dlp` to a playable stream |
+| Background playback & media keys | **Real** — the Media Session API feeds the OS media overlay and hardware keys |
 | Catalogue (home, search, album/playlist pages) | **Real** YouTube Music (InnerTube) on desktop; the preview filters a bundled mock |
 | Artwork | Real thumbnails when the response carries them, else a generated sleeve from a hash |
 | Search | **Real** catalogue search on desktop |
 | Sign-in | **Real** OAuth 2.0 device flow in Rust against Google |
 | Personal library (playlists, liked songs, saved albums) | **Real**, once the browser cookie is connected — InnerTube needs `Cookie` + `SAPISIDHASH`, not a bearer token |
+| Liking a track | **Real** — writes through to the account when the library is connected (optimistic, with rollback); local-only otherwise |
 | Token / cookie storage | Real OS credential vault (`keyring`: Windows Credential Manager / Keychain / Secret Service) |
 | Browser preview (`npm run dev`) | Mock catalogue + simulated transport, labelled as such in the UI |
 
@@ -137,20 +139,25 @@ src/
   types.ts                 domain model, no React
   data/catalog.ts          bundled mock catalogue (browser preview only)
   hooks/useCatalog.tsx     catalogue store: real InnerTube or the mock
-  hooks/usePlayer.tsx      playback reducer + the real <audio> sink
+  hooks/playerReducer.ts   pure playback state machine (unit-tested)
+  hooks/usePlayer.tsx      reducer + the real <audio> sink + Media Session
   hooks/useAuth.tsx        device-flow state machine
   hooks/usePlayCollection.ts
   lib/auth.ts              Tauri IPC boundary + browser fallback
-  lib/music.ts             catalogue/stream IPC boundary + browser fallback
+  lib/music.ts             catalogue/stream/rate IPC boundary + browser fallback
+  lib/catalog.ts           pure catalogue merge (unit-tested)
   lib/cover.ts             deterministic artwork from a hash
   components/              Sidebar, TopBar, HomeView, CollectionView,
                            TrackTable, PlayerBar, QueuePanel, SignInScreen,
                            LibraryCookieForm
 src-tauri/src/
   auth.rs                  device flow, token + cookie vault, SAPISIDHASH signing
-  innertube.rs             real YouTube Music catalogue client (search/browse/home/library)
+  innertube.rs             real YouTube Music catalogue client (search/browse/home/library/rate)
+  browser_cookies.rs       reads the browser cookie store through yt-dlp
   stream.rs                real audio resolution via yt-dlp
-tools/screenshots.mjs      Playwright harness that produced the images above
+tools/screenshots.mjs      Playwright harness that produced the preview images
+tools/e2e.mjs              Playwright harness for the desktop UI (stubbed backend)
+vitest.config.ts           unit-test config
 ```
 
 ## Design notes
@@ -174,8 +181,13 @@ and no network dependency.
 
 ```bash
 npm run build        # tsc --strict + vite build
+npm test             # Vitest: the playback reducer and the catalogue merge
 cd src-tauri && cargo test --lib
-npm run preview & npm run screenshots   # writes docs/screenshots, fails on any console error
+
+# Browser-facing: needs a served build and Playwright's Chromium.
+npm run preview &
+npm run screenshots  # 01-08, mock preview; fails on any console error
+npm run e2e          # desktop-mode UI against a stubbed Rust backend
 ```
 
 The Rust suite is offline and deterministic. Two tests additionally exercise the **live** service —
@@ -187,8 +199,12 @@ cd src-tauri && YTM_LIVE=1 cargo test --lib
 ```
 
 `tools/screenshots.mjs` produces `01`–`08` against the production build and exits non-zero on any
-console error. `09-native-window.png` is a one-off capture of the running binary (`cargo build`, then
-`PrintWindow` against the window), which is why it shows real window chrome.
+console error. `tools/e2e.mjs` injects a fake `__TAURI_INTERNALS__.invoke` before the app loads, so
+`isDesktop()` is true and the **desktop-only** UI runs against a stub: it asserts the real catalogue
+renders, the missing-yt-dlp banner appears, the connected library loads, search returns backend
+tracks, and a like reaches `music_rate`. It writes `10`–`13`. `09-native-window.png` is a one-off
+capture of the running binary (`cargo build`, then `PrintWindow` against the window), which is why it
+shows real window chrome.
 
 ## Accessibility
 

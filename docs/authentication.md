@@ -145,8 +145,9 @@ Google states two things the interface must handle, both honoured in `SignInScre
 |---|---|
 | Device flow, token exchange, refresh, cookie vault, headers | `src-tauri/src/auth.rs` |
 | Catalogue client that consumes the cookie + signature | `src-tauri/src/innertube.rs` |
+| Reading the cookie out of the browser (via `yt-dlp`) | `src-tauri/src/browser_cookies.rs` |
 | Commands exposed to the webview | `src-tauri/src/lib.rs` |
 | IPC boundary and the browser fallback | `src/lib/auth.ts`, `src/lib/music.ts` |
 | Flow state machine (polling, countdown, cancellation) | `src/hooks/useAuth.tsx` |
 | The screen itself | `src/components/SignInScreen.tsx` |
-| Where the cookie is entered | `src/components/LibraryCookieForm.tsx` |
+| Where the cookie is entered or imported | `src/components/LibraryCookieForm.tsx` |

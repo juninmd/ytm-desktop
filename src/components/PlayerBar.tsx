@@ -142,7 +142,7 @@ export function PlayerBar({ queueOpen, onToggleQueue }: Props) {
       </div>
 
       <div className="flex flex-1 items-center justify-end gap-1">
-        <IconButton label="Letra" className="hidden 2xl:grid">
+        <IconButton label="Letra (em breve)" className="hidden 2xl:grid" disabled>
           <Mic2 className="size-4" />
         </IconButton>
         <IconButton
