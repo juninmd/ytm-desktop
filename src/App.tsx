@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import { CollectionView } from "./components/CollectionView";
 import { ArtistView } from "./components/ArtistView";
+import { DownloadsView } from "./components/DownloadsView";
 import { HomeView } from "./components/HomeView";
 import { LibraryView } from "./components/LibraryView";
 import { LyricsPanel } from "./components/LyricsPanel";
@@ -199,6 +200,8 @@ function Workspace({
     content = <SearchView query={query} onOpen={openCollection} />;
   } else if (view.kind === "library") {
     content = <LibraryView onOpen={openCollection} />;
+  } else if (view.kind === "downloads") {
+    content = <DownloadsView />;
   } else if (view.kind === "artist") {
     content = <ArtistView id={view.id} onOpen={openCollection} />;
   } else if (collection) {

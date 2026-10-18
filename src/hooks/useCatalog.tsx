@@ -12,6 +12,9 @@ import {
   browseCollection,
   clearLibraryCookies,
   cookieBrowsers,
+  deleteDownload,
+  downloadTrack as downloadTrackIpc,
+  fetchDownloads,
   fetchHome,
   fetchLibrary,
   fetchMore,
@@ -19,6 +22,8 @@ import {
   saveLibraryCookies,
   searchMusic,
   type CatalogPage,
+  type DownloadEntry,
+  type DownloadRequest,
   type HomeData,
   type ImportOutcome,
   type LibraryData,
@@ -83,6 +88,17 @@ export type CatalogApi = {
   browsers: string[];
   /** Reads the cookie from a browser and reloads the library. */
   importCookies: (browser: string) => Promise<ImportOutcome>;
+
+  /** Tracks downloaded for offline playback. */
+  downloads: DownloadEntry[];
+  /** The downloaded tracks as playable tracks. */
+  downloadTracks: Track[];
+  isDownloaded: (id: string) => boolean;
+  /** Downloads a track (or returns the existing file) and refreshes the list. */
+  download: (track: DownloadRequest) => Promise<DownloadEntry | null>;
+  /** Downloads many tracks, refreshing the list once. Resolves the failures. */
+  downloadMany: (tracks: DownloadRequest[]) => Promise<number>;
+  removeDownload: (id: string) => Promise<void>;
 };
 
 const CatalogContext = createContext<CatalogApi | null>(null);
@@ -94,6 +110,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<CatalogApi["status"]>("loading");
   const [error, setError] = useState<string | null>(null);
   const [browsers, setBrowsers] = useState<string[]>([]);
+  const [downloads, setDownloads] = useState<DownloadEntry[]>([]);
   const [sections, setSections] = useState<Record<string, Shelf[]>>({});
   const [continuations, setContinuations] = useState<Record<string, string>>({});
 
@@ -259,6 +276,52 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     [loadLibrary],
   );
 
+  const loadDownloads = useCallback(async () => {
+    try {
+      setDownloads(await fetchDownloads());
+    } catch {
+      setDownloads([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDownloads();
+  }, [loadDownloads]);
+
+  const download = useCallback(
+    async (track: DownloadRequest) => {
+      const entry = await downloadTrackIpc(track);
+      await loadDownloads();
+      return entry;
+    },
+    [loadDownloads],
+  );
+
+  /** Downloads sequentially, reloading the list once at the end. */
+  const downloadMany = useCallback(
+    async (tracks: DownloadRequest[]) => {
+      let failed = 0;
+      for (const track of tracks) {
+        try {
+          await downloadTrackIpc(track);
+        } catch {
+          failed += 1;
+        }
+      }
+      await loadDownloads();
+      return failed;
+    },
+    [loadDownloads],
+  );
+
+  const removeDownload = useCallback(
+    async (id: string) => {
+      await deleteDownload(id);
+      await loadDownloads();
+    },
+    [loadDownloads],
+  );
+
   const api = useMemo<CatalogApi>(() => {
     const { collections, tracks } = maps;
 
@@ -300,6 +363,21 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       clearCookies,
       browsers,
       importCookies,
+      downloads,
+      downloadTracks: downloads.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        artist: entry.artist,
+        album: entry.album,
+        albumId: "",
+        duration: entry.duration,
+        year: 0,
+        plays: "",
+      })),
+      isDownloaded: (id) => downloads.some((entry) => entry.id === id),
+      download,
+      downloadMany,
+      removeDownload,
     };
   }, [
     maps,
@@ -310,6 +388,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     browsers,
     sections,
     continuations,
+    downloads,
     ensureCollection,
     loadMore,
     search,
@@ -318,6 +397,9 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     saveCookies,
     clearCookies,
     importCookies,
+    download,
+    downloadMany,
+    removeDownload,
   ]);
 
   return <CatalogContext.Provider value={api}>{children}</CatalogContext.Provider>;

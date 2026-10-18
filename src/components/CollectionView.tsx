@@ -28,11 +28,19 @@ export function CollectionView({
   onOpen: (collection: Collection) => void;
 }) {
   const playCollection = usePlayCollection();
-  const { resolveTracks, ensureCollection, getCollection, getSections, hasMore, loadMore } =
-    useCatalog();
-  const { state, toggleShuffle, isLiked, toggleLike } = usePlayer();
+  const {
+    resolveTracks,
+    ensureCollection,
+    getCollection,
+    getSections,
+    hasMore,
+    loadMore,
+    downloadMany,
+  } = useCatalog();
+  const { state, toggleShuffle, isLiked, toggleLike, notify } = usePlayer();
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   /** Guards against re-fetching as the store's callbacks change identity. */
@@ -158,8 +166,28 @@ export function CollectionView({
         >
           <Heart className={cn("size-6", leadLiked && "fill-accent")} />
         </IconButton>
-        <IconButton label="Baixar (em breve)" className="size-9" disabled>
-          <Download className="size-6" />
+        <IconButton
+          label={saving ? "Baixando coleção" : "Baixar coleção"}
+          className="size-9"
+          disabled={saving || tracks.length === 0}
+          onClick={() => {
+            setSaving(true);
+            void downloadMany(
+              tracks.map((track) => ({
+                id: track.id,
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                duration: track.duration,
+              })),
+            )
+              .then((failed) => {
+                if (failed > 0) notify(`${failed} faixa(s) não puderam ser baixadas.`);
+              })
+              .finally(() => setSaving(false));
+          }}
+        >
+          {saving ? <Loader2 className="size-6 animate-spin" /> : <Download className="size-6" />}
         </IconButton>
       </div>
 

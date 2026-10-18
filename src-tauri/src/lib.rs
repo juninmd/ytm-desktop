@@ -1,5 +1,6 @@
 mod auth;
 mod browser_cookies;
+mod downloads;
 mod innertube;
 mod lyrics;
 mod stream;
@@ -17,6 +18,9 @@ pub fn run() {
             auth::auth_clear_cookies,
             browser_cookies::auth_import_browser_cookies,
             browser_cookies::cookie_browsers,
+            downloads::music_download,
+            downloads::music_downloads,
+            downloads::music_delete_download,
             innertube::music_home,
             innertube::music_search,
             innertube::music_more,
@@ -26,6 +30,7 @@ pub fn run() {
             innertube::music_rate,
             lyrics::music_lyrics,
             stream::music_stream,
+            stream::music_remote_stream,
             stream::music_prefetch,
             stream::music_clear_stream_cache,
             stream::music_resolver_status,
