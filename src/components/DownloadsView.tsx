@@ -4,7 +4,8 @@ import { usePlayer } from "../hooks/usePlayer";
 import { Cover } from "./Cover";
 import { IconButton } from "./ui/IconButton";
 import { cn } from "../lib/cn";
-import { formatTime, pluralize } from "../lib/format";
+import { useI18n } from "../lib/i18n";
+import { formatTime } from "../lib/format";
 
 /**
  * Tracks saved to disk for offline playback. Playing starts the downloaded
@@ -13,13 +14,14 @@ import { formatTime, pluralize } from "../lib/format";
 export function DownloadsView() {
   const { downloads, downloadTracks, removeDownload } = useCatalog();
   const { play, current, state, notify } = usePlayer();
+  const { t } = useI18n();
 
   if (downloads.length === 0) {
     return (
       <div className="px-6 pb-10">
-        <h1 className="pt-2 text-2xl font-bold tracking-tight">Baixados</h1>
+        <h1 className="pt-2 text-2xl font-bold tracking-tight">{t("downloads.title")}</h1>
         <p className="mt-6 max-w-[52ch] text-sm text-muted">
-          Nada baixado ainda. Use o botão de download em uma faixa para ouvi-la sem internet.
+          {t("downloads.empty")}
         </p>
       </div>
     );
@@ -29,9 +31,9 @@ export function DownloadsView() {
 
   return (
     <div className="px-6 pb-10">
-      <h1 className="pt-2 text-2xl font-bold tracking-tight">Baixados</h1>
+      <h1 className="pt-2 text-2xl font-bold tracking-tight">{t("downloads.title")}</h1>
       <p className="mt-1 text-sm text-muted">
-        {pluralize(downloads.length, "faixa")} · {formatBytes(totalBytes)} no disco
+        {t("downloads.count", { count: downloads.length, size: formatBytes(totalBytes) })}
       </p>
 
       <div className="mt-6 rounded-lg bg-black/25 py-2">
@@ -48,7 +50,7 @@ export function DownloadsView() {
               <button
                 type="button"
                 onClick={() => play(downloadTracks, index)}
-                aria-label={`Tocar ${entry.title}`}
+                aria-label={t("track.play", { title: entry.title })}
                 className="relative shrink-0"
               >
                 <Cover seed={entry.id} title={entry.album || entry.title} className="size-10" />
@@ -73,10 +75,10 @@ export function DownloadsView() {
                 {entry.duration > 0 ? formatTime(entry.duration) : "--:--"}
               </span>
               <IconButton
-                label={`Remover ${entry.title} dos baixados`}
+                label={t("downloads.remove", { title: entry.title })}
                 onClick={() =>
                   void removeDownload(entry.id).catch(() =>
-                    notify(`Não foi possível remover ${entry.title}.`),
+                    notify(t("downloads.removeFailed", { title: entry.title })),
                   )
                 }
                 className={cn(

@@ -17,6 +17,8 @@
 //! `SAPISIDHASH` digest — that is what [`cookies`] and [`origin_headers`] wire
 //! up, and [`LibraryStatus`] reports honestly when they are absent.
 
+use std::sync::{Mutex, OnceLock};
+
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -107,12 +109,40 @@ pub struct LibraryStatus {
 /* Request helpers                                                            */
 /* -------------------------------------------------------------------------- */
 
+/// The catalogue language (`hl`), settable from the UI so the data matches the
+/// interface language.
+static LOCALE: OnceLock<Mutex<String>> = OnceLock::new();
+
+fn locale_store() -> &'static Mutex<String> {
+    LOCALE.get_or_init(|| Mutex::new("en".to_string()))
+}
+
+/// The `hl` every catalogue request is sent with.
+fn locale_hl() -> String {
+    locale_store()
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|_| "en".to_string())
+}
+
+/// Sets the data language used by every catalogue request.
+#[tauri::command]
+pub fn set_locale(locale: String) {
+    let hl = match locale.as_str() {
+        "pt" => "pt-BR",
+        _ => "en",
+    };
+    if let Ok(mut guard) = locale_store().lock() {
+        *guard = hl.to_string();
+    }
+}
+
 fn context() -> Value {
     json!({
         "client": {
             "clientName": CLIENT_NAME,
             "clientVersion": CLIENT_VERSION,
-            "hl": "en",
+            "hl": locale_hl(),
             "gl": "US",
         },
         "user": { "lockedSafetyMode": false },

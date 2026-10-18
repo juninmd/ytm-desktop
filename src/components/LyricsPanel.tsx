@@ -4,6 +4,7 @@ import { fetchLyrics, type Lyrics } from "../lib/music";
 import { usePlayer } from "../hooks/usePlayer";
 import { IconButton } from "./ui/IconButton";
 import { cn } from "../lib/cn";
+import { useI18n } from "../lib/i18n";
 
 /**
  * Karaoke lyrics panel.
@@ -15,6 +16,7 @@ import { cn } from "../lib/cn";
  */
 export function LyricsPanel({ onClose }: { onClose: () => void }) {
   const { current, state, seek } = usePlayer();
+  const { t } = useI18n();
   const [loaded, setLoaded] = useState<{ id: string; lyrics: Lyrics } | null>(null);
   const [failed, setFailed] = useState<{ id: string; message: string } | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -97,9 +99,9 @@ export function LyricsPanel({ onClose }: { onClose: () => void }) {
       <header className="flex items-center justify-between px-4 pt-4 pb-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Mic2 className="size-4" />
-          Letra
+          {t("lyrics.title")}
         </h2>
-        <IconButton label="Fechar letra" className="size-7" onClick={onClose}>
+        <IconButton label={t("lyrics.close")} className="size-7" onClick={onClose}>
           <X className="size-4" />
         </IconButton>
       </header>
@@ -107,7 +109,7 @@ export function LyricsPanel({ onClose }: { onClose: () => void }) {
       {!current ? (
         <div className="grid flex-1 place-items-center px-6 text-center">
           <Music2 className="size-6 text-subtle" />
-          <p className="mt-3 text-sm text-muted">Escolha uma faixa para ver a letra.</p>
+          <p className="mt-3 text-sm text-muted">{t("lyrics.empty")}</p>
         </div>
       ) : error && !lyrics ? (
         <div className="grid flex-1 place-items-center px-6 text-center">
@@ -124,11 +126,11 @@ export function LyricsPanel({ onClose }: { onClose: () => void }) {
               {current.title} · {current.artist}
             </p>
             <p className="mt-0.5 text-[11px] text-subtle">
-              {lyrics.synced ? `Sincronizada · ${lyrics.source}` : `Sem sincronia · ${lyrics.source}`}
+              {lyrics.synced ? `${t("lyrics.synced")} · ${lyrics.source}` : `${t("lyrics.plain")} · ${lyrics.source}`}
             </p>
             {lyrics.source.toLowerCase().includes("lrclib") && (
               <p className="mt-0.5 text-[11px] text-subtle/80">
-                Letras via LRCLIB (lrclib.net) — artista, título e álbum são enviados para a busca.
+                {t("lyrics.source")}
               </p>
             )}
           </div>

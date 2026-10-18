@@ -13,18 +13,16 @@ import { Cover } from "./Cover";
 import { Logo } from "./ui/Logo";
 import { cn } from "../lib/cn";
 import { formatTime } from "../lib/format";
+import { useI18n, type MessageKey } from "../lib/i18n";
 import type { AuthApi } from "../hooks/useAuth";
 
 const COVERS = ["midnight-autobahn", "sal-e-vento", "low-orbit"];
 
-const FEATURES = [
-  "Biblioteca, playlists e curtidas carregadas da sua conta",
-  "Login pelo Google com código de dispositivo — sem senha no app",
-  "Toca em segundo plano com controles nativos do sistema",
-];
+const FEATURES: MessageKey[] = ["signin.feature1", "signin.feature2", "signin.feature3"];
 
 export function SignInScreen({ auth }: { auth: AuthApi }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
 
   const copyCode = async () => {
     if (!auth.deviceCode) return;
@@ -74,13 +72,8 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
             ))}
           </div>
 
-          <h1 className="text-4xl leading-[1.1] font-black tracking-tight">
-            Sua música, em um app que é seu.
-          </h1>
-          <p className="mt-4 text-sm text-muted">
-            Player nativo construído com Tauri 2, React 19 e Tailwind 4. A mesma biblioteca do
-            YouTube Music, sem aba do navegador.
-          </p>
+          <h1 className="text-4xl leading-[1.1] font-black tracking-tight">{t("signin.hero")}</h1>
+          <p className="mt-4 text-sm text-muted">{t("signin.heroIntro")}</p>
 
           <ul className="mt-8 space-y-3">
             {FEATURES.map((feature) => (
@@ -93,7 +86,7 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
         </div>
 
         <p className="relative text-xs text-subtle">
-          Binário de ~8 MB · sem Electron · WebView2 do sistema
+          {t("signin.footer")}
         </p>
       </section>
 
@@ -110,8 +103,8 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
           <span className="grid size-14 place-items-center rounded-full bg-accent text-white">
             <Check className="size-7" />
           </span>
-          <h2 className="mt-5 text-xl font-semibold">Conta conectada</h2>
-          <p className="mt-2 text-sm text-muted">Carregando sua biblioteca…</p>
+          <h2 className="mt-5 text-xl font-semibold">{t("signin.granted")}</h2>
+          <p className="mt-2 text-sm text-muted">{t("signin.grantedHint")}</p>
           <Loader2 className="mt-6 size-5 animate-spin text-muted" />
         </div>
       );
@@ -122,15 +115,15 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
         <div className="rise">
           <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-accent uppercase">
             <Loader2 className="size-3.5 animate-spin" />
-            Aguardando autorização
+            {t("signin.awaiting")}
           </div>
-          <h2 className="mt-3 text-xl font-semibold">Confirme no navegador</h2>
+          <h2 className="mt-3 text-xl font-semibold">{t("signin.confirm")}</h2>
           <p className="mt-2 text-sm text-muted">
-            Abrimos o Google em uma aba. Digite o código abaixo para autorizar este dispositivo.
+            {t("signin.confirmHint")}
           </p>
 
           <div className="mt-6 rounded-lg border border-line bg-canvas p-4">
-            <p className="text-xs text-subtle">Código do dispositivo</p>
+            <p className="text-xs text-subtle">{t("signin.deviceCode")}</p>
             <div className="mt-1 flex items-center gap-3">
               {/* Sized and tracked so the documented worst case — 15 'W'
                   characters — still fits. The value itself is never altered. */}
@@ -143,12 +136,14 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
                 className="ml-auto flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-line-strong hover:text-fg"
               >
                 {copied ? <Check className="size-3.5 text-accent" /> : <Copy className="size-3.5" />}
-                {copied ? "Copiado" : "Copiar"}
+                {copied ? t("signin.copied") : t("signin.copy")}
               </button>
             </div>
             <p className="mt-3 text-xs text-subtle">
-              Expira em {formatTime(auth.secondsLeft)} · intervalo de consulta{" "}
-              {auth.deviceCode.interval}s
+              {t("signin.expires", {
+                time: formatTime(auth.secondsLeft),
+                interval: auth.deviceCode.interval,
+              })}
             </p>
           </div>
 
@@ -158,7 +153,7 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
             className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-strong"
           >
             <ExternalLink className="size-4" />
-            Abrir {auth.deviceCode.verificationUrl.replace("https://", "")}
+            {t("signin.open", { host: auth.deviceCode.verificationUrl.replace("https://", "") })}
           </button>
 
           <button
@@ -166,7 +161,7 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
             onClick={auth.cancel}
             className="mt-3 w-full rounded-full px-4 py-2 text-sm text-muted transition-colors hover:text-fg"
           >
-            Cancelar
+            {t("signin.cancel")}
           </button>
         </div>
       );
@@ -175,17 +170,14 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
     return (
       <div className="rise">
         <Logo className="size-9" />
-        <h2 className="mt-5 text-2xl font-semibold tracking-tight">Entrar no YTM Desktop</h2>
-        <p className="mt-2 text-sm text-muted">
-          Conecte a conta do Google para carregar playlists, curtidas e histórico. Nenhuma senha é
-          digitada neste app.
-        </p>
+        <h2 className="mt-5 text-2xl font-semibold tracking-tight">{t("signin.title")}</h2>
+        <p className="mt-2 text-sm text-muted">{t("signin.intro")}</p>
 
         {auth.error && (
           <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-accent/40 bg-accent/10 p-3 text-xs text-fg/90">
             <TriangleAlert className="mt-px size-4 shrink-0 text-accent" />
             <div>
-              <p className="font-medium">Não foi possível entrar</p>
+              <p className="font-medium">{t("signin.failed")}</p>
               <p className="mt-0.5 text-muted">{auth.error}</p>
             </div>
           </div>
@@ -197,12 +189,12 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
           className="bg-accent hover:bg-accent-strong mt-6 flex w-full items-center justify-center gap-2 rounded-full px-4 py-3 text-sm font-semibold text-white transition-colors"
         >
           <LogIn className="size-4" />
-          Continuar com o Google
+          {t("signin.continue")}
         </button>
 
         <div className="my-5 flex items-center gap-3 text-xs text-subtle">
           <span className="h-px flex-1 bg-line" />
-          ou
+          {t("signin.or")}
           <span className="h-px flex-1 bg-line" />
         </div>
 
@@ -211,7 +203,7 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
           onClick={auth.enterDemo}
           className="w-full rounded-full border border-line px-4 py-3 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
         >
-          Explorar em modo demonstração
+          {t("signin.demo")}
         </button>
 
         <dl className="mt-7 space-y-2.5 text-xs text-subtle">
@@ -219,23 +211,19 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
             <KeyRound className="size-3.5 shrink-0" />
             <dt className="sr-only">Escopo</dt>
             <dd>
-              Escopo solicitado: <code className="text-muted">youtube.readonly</code>
+              {t("signin.scope")} <code className="text-muted">youtube.readonly</code>
             </dd>
           </div>
           <div className="flex items-center gap-2.5">
             <ShieldCheck className="size-3.5 shrink-0" />
-            <dt className="sr-only">Armazenamento</dt>
-            <dd>
-              O token fica no cofre do sistema operacional, nunca no
-              <code className="text-muted"> localStorage</code>
-            </dd>
+            <dt className="sr-only">Storage</dt>
+            <dd>{t("signin.storage")}</dd>
           </div>
         </dl>
 
         {auth.simulated && (
           <p className="mt-6 rounded-md border border-line px-3 py-2 text-[11px] text-subtle">
-            Pré-visualização no navegador: o fluxo de dispositivo está simulado. No app Tauri, as
-            mesmas chamadas chegam ao backend Rust.
+            {t("signin.simulated")}
           </p>
         )}
       </div>

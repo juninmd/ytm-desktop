@@ -25,6 +25,7 @@ import {
   reducer,
   type Preferences,
 } from "./playerReducer";
+import { useI18n } from "../lib/i18n";
 
 /**
  * The playback state machine, plus the audio sink.
@@ -131,6 +132,7 @@ const PlayerContext = createContext<PlayerApi | null>(null);
 const TICK_MS = 250;
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const [state, dispatch] = useReducer(reducer, undefined, () => createInitialState(loadPreferences()));
   const [engine, setEngine] = useState<PlaybackEngine>("sim");
   const [resolverAvailable, setResolverAvailable] = useState<boolean | null>(null);
@@ -373,7 +375,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         })
         .catch(() => {
           dispatch({ type: "like", id }); // Undo the optimistic change.
-          flash("Não foi possível salvar a curtida na conta.");
+          flash(t("player.likeFailed"));
         });
     },
     [flash],

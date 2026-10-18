@@ -4,22 +4,24 @@ import { usePlayCollection } from "../hooks/usePlayCollection";
 import { heroStyle } from "../lib/cover";
 import { Cover } from "./Cover";
 import { Play } from "lucide-react";
+import { useI18n, type MessageKey } from "../lib/i18n";
 import type { Collection } from "../types";
 
-function greeting(hour: number): string {
-  if (hour < 12) return "Bom dia";
-  if (hour < 18) return "Boa tarde";
-  return "Boa noite";
+function greetingKey(hour: number): MessageKey {
+  if (hour < 12) return "home.morning";
+  if (hour < 18) return "home.afternoon";
+  return "home.evening";
 }
 
 export function HomeView({ onOpen }: { onOpen: (collection: Collection) => void }) {
   const playCollection = usePlayCollection();
   const { quickPicks, shelves, getCollection, status, error, refresh } = useCatalog();
+  const { t } = useI18n();
 
   if (status === "loading") {
     return (
       <div className="grid place-items-center px-6 py-24 text-center text-sm text-muted">
-        Carregando o catálogo…
+        {t("home.loading")}
       </div>
     );
   }
@@ -27,14 +29,14 @@ export function HomeView({ onOpen }: { onOpen: (collection: Collection) => void 
   if (status === "error") {
     return (
       <div className="grid place-items-center px-6 py-24 text-center">
-        <p className="text-lg font-semibold">Não foi possível carregar o catálogo</p>
+        <p className="text-lg font-semibold">{t("home.error")}</p>
         <p className="mt-1 max-w-[46ch] text-sm text-muted">{error}</p>
         <button
           type="button"
           onClick={() => void refresh()}
           className="mt-5 rounded-full border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
         >
-          Tentar de novo
+          {t("common.retry")}
         </button>
       </div>
     );
@@ -49,7 +51,7 @@ export function HomeView({ onOpen }: { onOpen: (collection: Collection) => void 
         />
       )}
       <div className="relative px-6 pt-2">
-        <h1 className="text-2xl font-bold tracking-tight">{greeting(new Date().getHours())}</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t(greetingKey(new Date().getHours()))}</h1>
 
         <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
           {quickPicks.slice(0, 6).map((id) => {
@@ -87,7 +89,7 @@ export function HomeView({ onOpen }: { onOpen: (collection: Collection) => void 
                 {shelf.subtitle && <p className="text-xs text-muted">{shelf.subtitle}</p>}
               </div>
               <button type="button" className="text-xs font-semibold text-muted hover:text-fg">
-                Mostrar tudo
+                {t("home.showAll")}
               </button>
             </div>
 

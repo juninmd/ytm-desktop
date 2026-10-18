@@ -7,6 +7,7 @@ import { usePlayer } from "../hooks/usePlayer";
 import { useCatalog } from "../hooks/useCatalog";
 import { cn } from "../lib/cn";
 import { formatTime } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 import type { Track } from "../types";
 
 const ROW = {
@@ -29,10 +30,11 @@ export function TrackTable({
   tracks,
   showPosition = true,
   showAlbum = true,
-  emptyLabel = "Nada por aqui ainda.",
+  emptyLabel,
 }: Props) {
   const { play, current, isLiked, toggleLike, state, notify } = usePlayer();
   const { download, isDownloaded } = useCatalog();
+  const { t } = useI18n();
   const [busy, setBusy] = useState<string[]>([]);
   const row = showAlbum ? ROW["with-album"] : ROW["no-album"];
 
@@ -46,31 +48,31 @@ export function TrackTable({
       album: track.album,
       duration: track.duration,
     })
-      .catch(() => notify(`Não foi possível baixar ${track.title}.`))
+      .catch(() => notify(t("track.downloadFailed", { title: track.title })))
       .finally(() => setBusy((current) => current.filter((id) => id !== track.id)));
   };
 
   if (tracks.length === 0) {
-    return <p className="px-4 py-10 text-center text-sm text-muted">{emptyLabel}</p>;
+    return <p className="px-4 py-10 text-center text-sm text-muted">{emptyLabel ?? t("track.empty")}</p>;
   }
 
   return (
-    <div role="table" aria-label="Faixas">
+    <div role="table" aria-label={t("track.table")}>
       <div role="row" className={cn(row, "border-b border-line px-4 pb-2 text-xs text-subtle")}>
         <span role="columnheader" className="text-right">
-          #
+          {t("track.index")}
         </span>
-        <span role="columnheader">Título</span>
+        <span role="columnheader">{t("track.title")}</span>
         {showAlbum && (
           <span role="columnheader" className="hidden xl:block">
-            Álbum
+            {t("track.album")}
           </span>
         )}
         <span role="columnheader" className="hidden xl:block">
-          Reproduções
+          {t("track.plays")}
         </span>
         <span role="columnheader" className="flex justify-end">
-          <Clock className="size-4" aria-label="Duração" />
+          <Clock className="size-4" aria-label={t("track.duration")} />
         </span>
       </div>
 
@@ -94,7 +96,7 @@ export function TrackTable({
                 <button
                   type="button"
                   onClick={() => play(tracks, index)}
-                  aria-label={`Tocar ${track.title}`}
+                  aria-label={t("track.play", { title: track.title })}
                   className="grid size-5 place-items-center text-sm text-subtle tabular-nums"
                 >
                   {playing && state.isPlaying ? (
@@ -139,7 +141,11 @@ export function TrackTable({
 
               <span role="cell" className="flex items-center justify-end gap-1">
                 <IconButton
-                  label={saved ? `${track.title} já está baixada` : `Baixar ${track.title}`}
+                  label={
+                    saved
+                      ? t("track.downloaded", { title: track.title })
+                      : t("track.download", { title: track.title })
+                  }
                   onClick={() => save(track)}
                   disabled={saved || busy.includes(track.id)}
                   className={cn("opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100", saved && "opacity-100")}
@@ -153,7 +159,11 @@ export function TrackTable({
                   )}
                 </IconButton>
                 <IconButton
-                  label={liked ? `Remover ${track.title} das curtidas` : `Curtir ${track.title}`}
+                  label={
+                    liked
+                      ? t("track.unlike", { title: track.title })
+                      : t("track.like", { title: track.title })
+                  }
                   onClick={() => toggleLike(track.id)}
                   className={cn(
                     "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",

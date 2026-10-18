@@ -4,15 +4,16 @@ import { useCatalog, type SearchFilter } from "../hooks/useCatalog";
 import { CollectionCard } from "./CollectionCard";
 import { TrackTable } from "./TrackTable";
 import { cn } from "../lib/cn";
+import { useI18n, type MessageKey } from "../lib/i18n";
 import type { CatalogPage } from "../lib/music";
 import type { Collection } from "../types";
 
-const FILTERS: { id: SearchFilter; label: string }[] = [
-  { id: "all", label: "Tudo" },
-  { id: "songs", label: "Músicas" },
-  { id: "albums", label: "Álbuns" },
-  { id: "artists", label: "Artistas" },
-  { id: "playlists", label: "Playlists" },
+const FILTERS: { id: SearchFilter; label: MessageKey }[] = [
+  { id: "all", label: "search.filterAll" },
+  { id: "songs", label: "search.filterSongs" },
+  { id: "albums", label: "search.filterAlbums" },
+  { id: "artists", label: "search.filterArtists" },
+  { id: "playlists", label: "search.filterPlaylists" },
 ];
 
 export function SearchView({
@@ -23,6 +24,7 @@ export function SearchView({
   onOpen: (collection: Collection) => void;
 }) {
   const { search, searchMore } = useCatalog();
+  const { t } = useI18n();
   const [filter, setFilter] = useState<SearchFilter>("all");
   const [results, setResults] = useState<CatalogPage>({ collections: [], tracks: [] });
   const [continuation, setContinuation] = useState<string | null>(null);
@@ -79,7 +81,7 @@ export function SearchView({
     return (
       <div className="grid place-items-center px-6 py-24 text-center">
         <SearchX className="size-8 text-subtle" />
-        <p className="mt-4 text-lg font-semibold">A busca falhou</p>
+        <p className="mt-4 text-lg font-semibold">{t("search.failed")}</p>
         <p className="mt-1 max-w-[46ch] text-sm text-muted">{error}</p>
       </div>
     );
@@ -109,7 +111,9 @@ export function SearchView({
 
   return (
     <div className="px-6 pb-10">
-      <h1 className="pt-2 text-2xl font-bold tracking-tight">Resultados para “{query}”</h1>
+      <h1 className="pt-2 text-2xl font-bold tracking-tight">
+        {t("search.title", { query })}
+      </h1>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {FILTERS.map(({ id, label }) => (
@@ -125,7 +129,7 @@ export function SearchView({
                 : "bg-white/6 text-muted hover:bg-white/12 hover:text-fg",
             )}
           >
-            {label}
+            {t(label)}
           </button>
         ))}
       </div>
@@ -133,16 +137,14 @@ export function SearchView({
       {empty ? (
         <div className="grid place-items-center px-6 py-24 text-center">
           <SearchX className="size-8 text-subtle" />
-          <p className="mt-4 text-lg font-semibold">Nenhum resultado para “{query}”</p>
-          <p className="mt-1 max-w-[46ch] text-sm text-muted">
-            Verifique a grafia ou tente outro termo.
-          </p>
+          <p className="mt-4 text-lg font-semibold">{t("search.empty", { query })}</p>
+          <p className="mt-1 max-w-[46ch] text-sm text-muted">{t("search.emptyHint")}</p>
         </div>
       ) : (
         <>
           {artists.length > 0 && (
             <section className="mt-6">
-              <h2 className="text-lg font-bold tracking-tight">Artistas</h2>
+              <h2 className="text-lg font-bold tracking-tight">{t("search.artists")}</h2>
               <div className="no-scrollbar -mx-2 mt-3 flex gap-1 overflow-x-auto px-2 pb-1">
                 {artists.map((artist) => (
                   <CollectionCard
@@ -158,7 +160,7 @@ export function SearchView({
 
           {collections.length > 0 && (
             <section className="mt-6">
-              <h2 className="text-lg font-bold tracking-tight">Coleções</h2>
+              <h2 className="text-lg font-bold tracking-tight">{t("search.collections")}</h2>
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
                 {collections.map((collection) => (
                   <CollectionCard key={collection.id} collection={collection} onOpen={onOpen} />
@@ -169,7 +171,7 @@ export function SearchView({
 
           {results.tracks.length > 0 && (
             <section className="mt-8">
-              <h2 className="text-lg font-bold tracking-tight">Faixas</h2>
+              <h2 className="text-lg font-bold tracking-tight">{t("search.tracks")}</h2>
               <div className="mt-3 rounded-lg bg-black/25 py-2">
                 <TrackTable tracks={results.tracks} showAlbum={false} />
               </div>
@@ -185,7 +187,7 @@ export function SearchView({
                 className="flex items-center gap-2 rounded-full border border-line px-5 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg disabled:opacity-40"
               >
                 {state === "loading" && <Loader2 className="size-4 animate-spin" />}
-                Carregar mais
+                {t("search.loadMore")}
               </button>
             </div>
           )}

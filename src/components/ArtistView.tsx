@@ -6,7 +6,7 @@ import { heroStyle } from "../lib/cover";
 import { Cover } from "./Cover";
 import { CollectionCard } from "./CollectionCard";
 import { TrackTable } from "./TrackTable";
-import { pluralize } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 import type { Collection } from "../types";
 
 /**
@@ -22,6 +22,7 @@ export function ArtistView({
 }) {
   const { getCollection, getSections, ensureCollection, resolveTracks } = useCatalog();
   const playCollection = usePlayCollection();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(!getCollection(id));
   const [failed, setFailed] = useState(false);
   const attempted = useRef<string | null>(null);
@@ -46,7 +47,7 @@ export function ArtistView({
         {loading ? (
           <Loader2 className="size-6 animate-spin text-muted" />
         ) : failed ? (
-          <p className="text-sm text-muted">Não foi possível carregar o artista.</p>
+          <p className="text-sm text-muted">{t("collection.loadingFailed")}</p>
         ) : null}
       </div>
     );
@@ -68,13 +69,13 @@ export function ArtistView({
             className="size-[168px] shadow-[0_24px_60px_rgb(0_0_0/0.55)]"
           />
           <div className="min-w-0 pb-1">
-            <p className="text-xs font-semibold tracking-wide text-fg/80 uppercase">Artista</p>
+            <p className="text-xs font-semibold tracking-wide text-fg/80 uppercase">{t("format.artist")}</p>
             <h1 className="mt-2 text-5xl leading-[1.05] font-black tracking-tight break-words">
               {artist.title}
             </h1>
             {tracks.length > 0 && (
               <p className="mt-3 text-sm text-fg/85">
-                {pluralize(tracks.length, "faixa")} em destaque
+                {t("artist.topTracks", { count: tracks.length })}
               </p>
             )}
           </div>
@@ -85,7 +86,7 @@ export function ArtistView({
         <button
           type="button"
           onClick={() => void playCollection(artist)}
-          aria-label={`Tocar ${artist.title}`}
+          aria-label={t("collection.play", { title: artist.title })}
           className="bg-accent hover:bg-accent-strong grid size-14 place-items-center rounded-full text-white shadow-[0_10px_30px_rgb(255_61_90/0.35)] transition hover:scale-[1.04] active:scale-100"
         >
           <Play className="size-6 translate-x-px fill-current" />
@@ -93,7 +94,7 @@ export function ArtistView({
       </div>
 
       <div className="mx-6 rounded-lg bg-black/25 py-2">
-        <TrackTable tracks={tracks} showAlbum={false} emptyLabel="Nenhuma música em destaque." />
+        <TrackTable tracks={tracks} showAlbum={false} emptyLabel={t("artist.empty")} />
       </div>
 
       {sections.map((section) => (
