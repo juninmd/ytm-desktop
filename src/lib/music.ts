@@ -13,7 +13,16 @@ import type { Collection, Shelf, Track } from "../types";
  * reviewed offline. The two are interchangeable by shape.
  */
 
-export type CatalogPage = { collections: Collection[]; tracks: Track[] };
+export type CatalogPage = {
+  collections: Collection[];
+  tracks: Track[];
+  /** Extra card rows (an artist's albums, "You might also like"). */
+  sections?: Shelf[];
+  /** Token for the next page, when the API exposes one. */
+  continuation?: string;
+  /** Page title (artist name, album name, …). */
+  title?: string;
+};
 export type HomeData = { quickPicks: string[]; shelves: Shelf[]; collections: Collection[] };
 export type LibraryData = { available: boolean; collections: Collection[]; tracks: Track[] };
 
@@ -29,31 +38,55 @@ export async function fetchHome(): Promise<HomeData> {
   };
 }
 
-export async function searchMusic(query: string): Promise<CatalogPage> {
-  if (isDesktop()) return invoke<CatalogPage>("music_search", { query });
+export async function searchMusic(query: string, filter = "all"): Promise<CatalogPage> {
+  if (isDesktop()) return invoke<CatalogPage>("music_search", { query, filter });
 
   // Browser preview: filter the mock catalogue the way the old view did.
   const term = normalize(query.trim());
-  const collections = mock.collections.filter(
+  let collections = mock.collections.filter(
     (collection) =>
       normalize(collection.title).includes(term) ||
       normalize(collection.subtitle).includes(term),
   );
-  const tracks = mock.tracks.filter(
+  let tracks = mock.tracks.filter(
     (track) =>
       normalize(track.title).includes(term) ||
       normalize(track.artist).includes(term) ||
       normalize(track.album).includes(term),
   );
-  return { collections, tracks };
+
+  if (filter === "songs") collections = [];
+  if (filter === "albums") tracks = [];
+  if (filter === "albums") collections = collections.filter((item) => item.kind === "album");
+  if (filter === "playlists") tracks = [];
+  if (filter === "playlists") collections = collections.filter((item) => item.kind === "playlist");
+  if (filter === "artists") return { collections: [], tracks: [] };
+
+  return { collections, tracks, sections: [] };
+}
+
+/** Fetches the next page from a continuation token. */
+export async function fetchMore(continuation: string, search = false): Promise<CatalogPage> {
+  if (isDesktop()) return invoke<CatalogPage>("music_more", { continuation, search });
+  return { collections: [], tracks: [], sections: [] };
+}
+
+/** The endless radio that follows a track. */
+export async function fetchRadio(videoId: string): Promise<Track[]> {
+  if (isDesktop()) return invoke<Track[]>("music_radio", { videoId });
+  return mock.tracks.filter((track) => track.id !== videoId).slice(0, 5);
 }
 
 export async function browseCollection(id: string): Promise<CatalogPage> {
   if (isDesktop()) return invoke<CatalogPage>("music_browse", { id });
 
   const collection = mock.getCollection(id);
-  if (!collection) return { collections: [], tracks: [] };
-  return { collections: [collection], tracks: mock.resolveTracks(collection.trackIds) };
+  if (!collection) return { collections: [], tracks: [], sections: [] };
+  return {
+    collections: [collection],
+    tracks: mock.resolveTracks(collection.trackIds),
+    sections: [],
+  };
 }
 
 export async function fetchLibrary(): Promise<LibraryData> {
@@ -92,6 +125,12 @@ export async function resolveStream(trackId: string): Promise<StreamInfo> {
     throw new Error("O áudio real só existe no app desktop (Tauri).");
   }
   return invoke<StreamInfo>("music_stream", { trackId });
+}
+
+/** Warms the resolver cache for a track the player is likely to reach next. */
+export async function prefetchStream(trackId: string): Promise<boolean> {
+  if (!isDesktop()) return false;
+  return invoke<boolean>("music_prefetch", { trackId });
 }
 
 /** Whether the desktop backend can actually resolve real audio (yt-dlp). */

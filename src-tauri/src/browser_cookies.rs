@@ -128,11 +128,10 @@ fn create_private_dir() -> Result<PathBuf, String> {
             std::process::id(),
             random_suffix()
         ));
-        match std::fs::create_dir(&directory) {
-            Ok(()) => {
-                restrict_to_owner(&directory);
-                return Ok(directory);
-            }
+        // Create with the final mode atomically on Unix, so there is no window
+        // in which the directory is group/world-readable.
+        match make_private_dir(&directory) {
+            Ok(()) => return Ok(directory),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {
                 return Err(format!(
@@ -144,16 +143,16 @@ fn create_private_dir() -> Result<PathBuf, String> {
     Err("Não foi possível criar um diretório temporário exclusivo.".to_string())
 }
 
-/// Best-effort `0700` on Unix; on Windows the temp directory is already
-/// per-user.
 #[cfg(unix)]
-fn restrict_to_owner(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+fn make_private_dir(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new().mode(0o700).create(path)
 }
 
 #[cfg(not(unix))]
-fn restrict_to_owner(_path: &Path) {}
+fn make_private_dir(path: &Path) -> std::io::Result<()> {
+    std::fs::create_dir(path)
+}
 
 fn random_suffix() -> u64 {
     use std::sync::atomic::{AtomicU64, Ordering};

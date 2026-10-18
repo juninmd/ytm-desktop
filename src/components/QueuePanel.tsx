@@ -6,7 +6,7 @@ import { cn } from "../lib/cn";
 import type { Track } from "../types";
 
 export function QueuePanel({ onClose }: { onClose: () => void }) {
-  const { state, current, upNext, isLiked, toggleLike, play } = usePlayer();
+  const { state, current, upNext, isLiked, toggleLike, play, toggleAutoplay } = usePlayer();
 
   const jumpTo = (track: Track) => {
     const index = state.queue.findIndex((item) => item.id === track.id);
@@ -21,6 +21,27 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
           <X className="size-4" />
         </IconButton>
       </header>
+
+      <div className="px-4 pb-2">
+        <button
+          type="button"
+          onClick={toggleAutoplay}
+          aria-pressed={state.autoplay}
+          className={cn(
+            "w-full rounded-md border px-3 py-2 text-left text-xs transition-colors",
+            state.autoplay
+              ? "border-accent/40 bg-accent/8 text-fg"
+              : "border-line text-muted hover:text-fg",
+          )}
+        >
+          <span className="font-medium">Reprodução automática</span>
+          <span className="mt-0.5 block text-[11px] text-subtle">
+            {state.autoplay
+              ? "Continua com o rádio quando a fila acaba"
+              : "Para ao fim da fila"}
+          </span>
+        </button>
+      </div>
 
       <div className="scroll-area min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         <p className="px-2 py-2 text-xs font-semibold tracking-wide text-subtle uppercase">

@@ -71,12 +71,29 @@ export async function signOut(): Promise<void> {
 }
 
 export async function openVerificationUrl(url: string): Promise<void> {
+  // The url comes from Google's device-code response; only ever open the
+  // documented host, so a tampered/odd response cannot send the user elsewhere.
+  if (!isAllowedVerificationUrl(url)) {
+    throw new Error("URL de verificação inesperada.");
+  }
   if (isDesktop()) {
     await openUrl(url);
     return;
   }
   // Preview only: a real desktop build never reaches this branch.
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function isAllowedVerificationUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === "https:" &&
+      (parsed.hostname === "google.com" || parsed.hostname.endsWith(".google.com"))
+    );
+  } catch {
+    return false;
+  }
 }
 
 /* -------------------------------------------------------------------------- */

@@ -36,8 +36,8 @@ export type RepeatMode = "off" | "all" | "one";
 /** A unified shape for anything that can be opened and played as a whole. */
 export type Collection = {
   id: string;
-  kind: "album" | "playlist";
-  format: "album" | "ep" | "single" | "playlist";
+  kind: "album" | "playlist" | "artist";
+  format: "album" | "ep" | "single" | "playlist" | "artist";
   title: string;
   subtitle: string;
   description?: string;
@@ -70,10 +70,15 @@ export type PlayerState = {
   liked: string[];
   /** Increments on every new play so a replay reloads the audio element. */
   playToken: number;
+  /** True when the queue ran out and a radio should be fetched to continue. */
+  needsRadio: boolean;
+  /** Whether to continue with the radio when the queue ends. */
+  autoplay: boolean;
 };
 
 export type View =
   | { kind: "home" }
   | { kind: "library" }
   | { kind: "album"; id: string }
-  | { kind: "playlist"; id: string };
+  | { kind: "playlist"; id: string }
+  | { kind: "artist"; id: string };

@@ -21,11 +21,23 @@ export type Action =
   | { type: "shuffle" }
   | { type: "repeat" }
   | { type: "like"; id: string }
-  | { type: "sync-liked"; ids: string[] };
+  | { type: "sync-liked"; ids: string[] }
+  | { type: "append"; tracks: Track[] }
+  | { type: "autoplay" };
 
-export type Preferences = { volume: number; repeat: RepeatMode; liked: string[] };
+export type Preferences = {
+  volume: number;
+  repeat: RepeatMode;
+  liked: string[];
+  autoplay: boolean;
+};
 
-export const DEFAULT_PREFERENCES: Preferences = { volume: 0.7, repeat: "off", liked: [] };
+export const DEFAULT_PREFERENCES: Preferences = {
+  volume: 0.7,
+  repeat: "off",
+  liked: [],
+  autoplay: true,
+};
 
 function identityOrder(length: number): number[] {
   return Array.from({ length }, (_, index) => index);
@@ -55,6 +67,8 @@ export function createInitialState(preferences: Preferences = DEFAULT_PREFERENCE
     repeat: preferences.repeat,
     liked: preferences.liked,
     playToken: 0,
+    needsRadio: false,
+    autoplay: preferences.autoplay,
   };
 }
 
@@ -85,6 +99,7 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
         cursor: state.shuffle ? 0 : action.startIndex,
         isPlaying: true,
         position: 0,
+        needsRadio: false,
         // Bumped so replaying the current track reloads its audio element.
         playToken: state.playToken + 1,
       };
@@ -105,8 +120,14 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
 
       const next = step(state, 1);
       if (next === null) {
-        // End of queue, repeat off: park on the last track, paused.
-        return { ...state, isPlaying: false, position: track.duration };
+        // End of queue, repeat off: park on the last track, paused. If autoplay
+        // is on, ask for a radio so the music does not just stop.
+        return {
+          ...state,
+          isPlaying: false,
+          position: track.duration,
+          needsRadio: state.autoplay,
+        };
       }
       return { ...state, cursor: next, position: 0 };
     }
@@ -140,7 +161,7 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
         return { ...state, position: 0 };
       }
       const next = step(state, 1);
-      if (next === null) return state;
+      if (next === null) return { ...state, needsRadio: state.autoplay };
       return { ...state, cursor: next, position: 0, isPlaying: true };
     }
 
@@ -155,7 +176,9 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
     case "ended": {
       if (state.repeat === "one") return { ...state, position: 0 };
       const next = step(state, 1);
-      if (next === null) return { ...state, isPlaying: false, position: 0 };
+      if (next === null) {
+        return { ...state, isPlaying: false, position: 0, needsRadio: state.autoplay };
+      }
       // A one-track queue under repeat-all lands on the same cursor; bump the
       // token so the load effect restarts the element instead of going silent.
       if (next === state.cursor) return { ...state, position: 0, playToken: state.playToken + 1 };
@@ -199,5 +222,29 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
       const merged = Array.from(new Set([...state.liked, ...action.ids]));
       return merged.length === state.liked.length ? state : { ...state, liked: merged };
     }
+
+    /**
+     * Appends a radio (or any extra tracks) to the queue and jumps to the first
+     * of them. Used when the queue runs out and autoplay is on.
+     */
+    case "append": {
+      if (action.tracks.length === 0) return { ...state, needsRadio: false };
+      const base = state.queue.length;
+      const queue = [...state.queue, ...action.tracks];
+      const order = [...state.order, ...action.tracks.map((_, index) => base + index)];
+      return {
+        ...state,
+        queue,
+        order,
+        cursor: base,
+        position: 0,
+        isPlaying: true,
+        needsRadio: false,
+        playToken: state.playToken + 1,
+      };
+    }
+
+    case "autoplay":
+      return { ...state, autoplay: !state.autoplay, needsRadio: false };
   }
 }

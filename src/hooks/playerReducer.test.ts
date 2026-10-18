@@ -19,6 +19,7 @@ const prefs = (overrides: Partial<Preferences> = {}): Preferences => ({
   volume: 0.7,
   repeat: "off",
   liked: [],
+  autoplay: true,
   ...overrides,
 });
 
@@ -172,5 +173,38 @@ describe("playback reducer", () => {
     let state = reducer(createInitialState(prefs()), { type: "play", queue: unknown, startIndex: 0 });
     state = reducer(state, { type: "duration", duration: 214.5 });
     expect(state.queue[0].duration).toBe(214.5);
+  });
+
+  it("asks for a radio when the queue ends with autoplay on", () => {
+    let state = playing(createInitialState(prefs({ autoplay: true })), 2);
+    state = reducer(state, { type: "ended" });
+    expect(state.needsRadio).toBe(true);
+    expect(state.isPlaying).toBe(false);
+
+    const appended = reducer(state, { type: "append", tracks: [track("r1"), track("r2")] });
+    expect(appended.queue).toHaveLength(5);
+    expect(currentTrack(appended)?.id).toBe("r1");
+    expect(appended.isPlaying).toBe(true);
+    expect(appended.needsRadio).toBe(false);
+  });
+
+  it("stops without a radio when autoplay is off", () => {
+    let state = playing(createInitialState(prefs({ autoplay: false })), 2);
+    state = reducer(state, { type: "ended" });
+    expect(state.needsRadio).toBe(false);
+    expect(state.isPlaying).toBe(false);
+  });
+
+  it("clears the radio request when an append yields nothing", () => {
+    const state = reducer(playing(createInitialState(prefs()), 2), { type: "ended" });
+    expect(state.needsRadio).toBe(true);
+    expect(reducer(state, { type: "append", tracks: [] }).needsRadio).toBe(false);
+  });
+
+  it("toggles autoplay and clears a pending radio request", () => {
+    const state = reducer(playing(createInitialState(prefs()), 2), { type: "ended" });
+    const toggled = reducer(state, { type: "autoplay" });
+    expect(toggled.autoplay).toBe(false);
+    expect(toggled.needsRadio).toBe(false);
   });
 });

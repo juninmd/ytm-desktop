@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { PlayerState, Track } from "../types";
 import { isDesktop } from "../lib/auth";
-import { rateTrack, resolveStream, resolverStatus } from "../lib/music";
+import { prefetchStream, rateTrack, resolveStream, resolverStatus } from "../lib/music";
 import {
   createInitialState,
   reducer,
@@ -46,9 +46,10 @@ function loadPreferences(): Preferences {
       volume: typeof parsed.volume === "number" ? parsed.volume : 0.7,
       repeat: parsed.repeat === "all" || parsed.repeat === "one" ? parsed.repeat : "off",
       liked: Array.isArray(parsed.liked) ? parsed.liked : [],
+      autoplay: typeof parsed.autoplay === "boolean" ? parsed.autoplay : true,
     };
   } catch {
-    return { volume: 0.7, repeat: "off", liked: [] };
+    return { volume: 0.7, repeat: "off", liked: [], autoplay: true };
   }
 }
 
@@ -72,6 +73,10 @@ export type PlayerApi = {
   toggleLike: (id: string) => void;
   /** Seeds likes from the connected account. */
   syncLiked: (ids: string[]) => void;
+  /** Appends a radio to the queue and starts it. */
+  appendRadio: (tracks: Track[]) => void;
+  /** Turns the end-of-queue radio on or off. */
+  toggleAutoplay: () => void;
   /** Dismissible, short-lived message (e.g. a failed account write). */
   notice: string | null;
   dismissNotice: () => void;
@@ -114,6 +119,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const current = state.queue[state.order[state.cursor]] ?? null;
   const currentId = current?.id ?? null;
   const useRealAudio = isDesktop() && currentId !== null;
+
+  // Warm the next track's stream while the current one plays, so the gap
+  // between tracks is the cache lookup instead of a yt-dlp run.
+  useEffect(() => {
+    if (!isDesktop()) return;
+    const nextIndex = state.order[state.cursor + 1];
+    const next = nextIndex === undefined ? undefined : state.queue[nextIndex];
+    if (next && next.id !== currentId) void prefetchStream(next.id).catch(() => {});
+  }, [currentId, state.cursor, state.order, state.queue]);
 
   // Load (or reload) the real stream whenever the track — or a replay — changes.
   useEffect(() => {
@@ -213,13 +227,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       volume: state.volume,
       repeat: state.repeat,
       liked: state.liked,
+      autoplay: state.autoplay,
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
     } catch {
       // Private mode / quota: preferences are a nicety, never a failure.
     }
-  }, [state.volume, state.repeat, state.liked]);
+  }, [state.volume, state.repeat, state.liked, state.autoplay]);
 
   const play = useCallback((queue: Track[], startIndex = 0) => {
     dispatch({ type: "play", queue, startIndex });
@@ -269,6 +284,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const syncLiked = useCallback((ids: string[]) => {
     if (ids.length > 0) dispatch({ type: "sync-liked", ids });
+  }, []);
+
+  const appendRadio = useCallback((tracks: Track[]) => {
+    dispatch({ type: "append", tracks });
+  }, []);
+
+  const toggleAutoplay = useCallback(() => {
+    dispatch({ type: "autoplay" });
   }, []);
 
   const dismissNotice = useCallback(() => {
@@ -393,6 +416,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       cycleRepeat: () => dispatch({ type: "repeat" }),
       toggleLike,
       syncLiked,
+      appendRadio,
+      toggleAutoplay,
       notice,
       dismissNotice,
       isLiked: (id) => state.liked.includes(id),
@@ -407,6 +432,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     seek,
     toggleLike,
     syncLiked,
+    appendRadio,
+    toggleAutoplay,
     notice,
     dismissNotice,
   ]);

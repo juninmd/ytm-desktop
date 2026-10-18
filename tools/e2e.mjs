@@ -28,10 +28,11 @@ const TRACK = {
 
 const HOME = {
   quickPicks: ["pl1"],
-  shelves: [{ title: "Ouvir de novo", ids: ["pl1", "pl2"] }],
+  shelves: [{ title: "Ouvir de novo", ids: ["pl1", "pl2", "UCartist"] }],
   collections: [
     { id: "pl1", kind: "playlist", format: "playlist", title: "Playlist do Backend", subtitle: "Playlist", trackIds: [TRACK.id] },
     { id: "pl2", kind: "playlist", format: "playlist", title: "Álbum do Backend", subtitle: "Artista Real", trackIds: [] },
+    { id: "UCartist", kind: "artist", format: "artist", title: "Artista do Backend", subtitle: "Artista", trackIds: [] },
   ],
 };
 
@@ -91,9 +92,29 @@ await page.addInitScript(
               tracks: [],
             };
           case "music_search":
-            return { collections: [], tracks: [track] };
+            return { collections: [], tracks: [track], sections: [] };
+          case "music_more":
+            return { collections: [], tracks: [], sections: [] };
+          case "music_radio":
+            return [track];
           case "music_browse":
-            return { collections: [], tracks: [track] };
+            if (args?.id?.startsWith("UC")) {
+              return {
+                collections: [
+                  {
+                    id: args.id,
+                    kind: "artist",
+                    format: "artist",
+                    title: "Artista do Backend",
+                    subtitle: "Artista",
+                    trackIds: [track.id],
+                  },
+                ],
+                tracks: [track],
+                sections: [],
+              };
+            }
+            return { collections: [], tracks: [track], sections: [] };
           case "music_resolver_status":
             return { available: false, binary: null, detail: "stub: yt-dlp ausente" };
           case "music_rate":
@@ -152,7 +173,33 @@ await page.getByRole("searchbox", { name: "Buscar no catálogo" }).fill("faixa")
 await page.waitForSelector("text=Faixa do Backend");
 check("search renders backend tracks", await invoked("music_search"));
 
+// 4b. The result tabs narrow the request the way the web player does.
+await page.getByRole("button", { name: "Músicas", exact: true }).click();
+await page.waitForFunction(
+  () =>
+    window.__invokeCalls.some(
+      (call) => call.cmd === "music_search" && call.args?.filter === "songs",
+    ),
+  null,
+  { timeout: 3000 },
+);
+check("search filter is sent to the backend", true);
+
+// 4c. An artist card opens the artist page.
+await page.getByRole("button", { name: "Início", exact: true }).click();
+await page.waitForSelector("text=Artista do Backend");
+await page.getByRole("button", { name: "Abrir Artista do Backend" }).first().click();
+await page.waitForFunction(
+  () => document.querySelector("h1")?.textContent?.includes("Artista do Backend"),
+  null,
+  { timeout: 5000 },
+);
+check("artist page loads from the backend", await invoked("music_browse"));
+await shot("14-desktop-artist");
+
 // 5. Play a result, then like it: the like must reach the account.
+await page.getByRole("searchbox", { name: "Buscar no catálogo" }).fill("faixa");
+await page.waitForSelector("text=Faixa do Backend");
 await page.getByRole("button", { name: "Tocar Faixa do Backend" }).first().click();
 await page.getByRole("button", { name: "Curtir", exact: true }).click();
 await page.waitForFunction(

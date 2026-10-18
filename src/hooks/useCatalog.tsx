@@ -14,6 +14,7 @@ import {
   cookieBrowsers,
   fetchHome,
   fetchLibrary,
+  fetchMore,
   importBrowserCookies,
   saveLibraryCookies,
   searchMusic,
@@ -24,7 +25,7 @@ import {
 } from "../lib/music";
 import { isDesktop } from "../lib/auth";
 import { EMPTY_MAPS, mergeCatalog, type CatalogMaps } from "../lib/catalog";
-import type { Collection, Track } from "../types";
+import type { Collection, Shelf, Track } from "../types";
 
 /**
  * The catalogue store.
@@ -35,7 +36,14 @@ import type { Collection, Track } from "../types";
  * tracks and ask for a collection to be loaded when it is only a card so far.
  */
 
-export type LoadedCollection = { collection: Collection; tracks: Track[] };
+export type LoadedCollection = {
+  collection: Collection;
+  tracks: Track[];
+  sections: Shelf[];
+  continuation?: string;
+};
+
+export type SearchFilter = "all" | "songs" | "albums" | "artists" | "playlists";
 
 export type CatalogApi = {
   /** `ytmusic` when backed by the real API, `demo` when backed by the mock. */
@@ -59,7 +67,14 @@ export type CatalogApi = {
 
   /** Loads a card-only collection (home shelves) on demand. */
   ensureCollection: (id: string) => Promise<LoadedCollection | undefined>;
-  search: (query: string) => Promise<CatalogPage>;
+  /** Card rows attached to a page (an artist's albums, related rows). */
+  getSections: (id: string) => Shelf[];
+  /** Whether a collection has another page to fetch. */
+  hasMore: (id: string) => boolean;
+  /** Appends the next page of a collection. Resolves the number of new tracks. */
+  loadMore: (id: string) => Promise<number>;
+  search: (query: string, filter?: SearchFilter) => Promise<CatalogPage>;
+  searchMore: (continuation: string) => Promise<CatalogPage>;
 
   refresh: () => Promise<void>;
   saveCookies: (cookie: string) => Promise<void>;
@@ -79,6 +94,8 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<CatalogApi["status"]>("loading");
   const [error, setError] = useState<string | null>(null);
   const [browsers, setBrowsers] = useState<string[]>([]);
+  const [sections, setSections] = useState<Record<string, Shelf[]>>({});
+  const [continuations, setContinuations] = useState<Record<string, string>>({});
 
   const mapsRef = useRef(maps);
   mapsRef.current = maps;
@@ -143,6 +160,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
             const track = mapsRef.current.tracks[trackId];
             return track ? [track] : [];
           }),
+          sections: [],
         };
       }
 
@@ -151,19 +169,73 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
 
       const collection = page.collections[0] ?? existing;
       if (!collection) return undefined;
-      return { collection: { ...collection, id }, tracks: page.tracks };
+
+      if (page.sections && page.sections.length > 0) {
+        setSections((previous) => ({ ...previous, [id]: page.sections ?? [] }));
+      }
+      if (page.continuation) {
+        setContinuations((previous) => ({ ...previous, [id]: page.continuation as string }));
+      }
+
+      return {
+        collection: { ...collection, id },
+        tracks: page.tracks,
+        sections: page.sections ?? [],
+        continuation: page.continuation,
+      };
     },
     [merge],
   );
 
+  /** Appends the next page of a collection, extending its track list in place. */
+  const loadMore = useCallback(
+    async (id: string): Promise<number> => {
+      const token = continuations[id];
+      if (!token) return 0;
+
+      const page = await fetchMore(token, false);
+      merge(page);
+
+      setContinuations((previous) => {
+        const next = { ...previous };
+        if (page.continuation) next[id] = page.continuation;
+        else delete next[id];
+        return next;
+      });
+
+      const added = page.tracks.map((track) => track.id);
+      if (added.length > 0) {
+        setMaps((previous) => {
+          const collection = previous.collections[id];
+          if (!collection) return previous;
+          const known = new Set(collection.trackIds);
+          const trackIds = [...collection.trackIds, ...added.filter((trackId) => !known.has(trackId))];
+          return {
+            ...previous,
+            collections: { ...previous.collections, [id]: { ...collection, trackIds } },
+          };
+        });
+      }
+
+      return added.length;
+    },
+    [continuations, merge],
+  );
+
   const search = useCallback(
-    async (query: string) => {
-      const page = await searchMusic(query);
+    async (query: string, filter: SearchFilter = "all") => {
+      const page = await searchMusic(query, filter);
       merge(page);
       return page;
     },
     [merge],
   );
+
+  const searchMore = useCallback(async (continuation: string) => {
+    const page = await fetchMore(continuation, true);
+    merge(page);
+    return page;
+  }, [merge]);
 
   const saveCookies = useCallback(
     async (cookie: string) => {
@@ -218,14 +290,35 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       getCollection: (id) => collections[id],
       resolveTracks: (ids) => ids.flatMap((id) => (tracks[id] ? [tracks[id]] : [])),
       ensureCollection,
+      getSections: (id) => sections[id] ?? [],
+      hasMore: (id) => Boolean(continuations[id]),
+      loadMore,
       search,
+      searchMore,
       refresh,
       saveCookies,
       clearCookies,
       browsers,
       importCookies,
     };
-  }, [maps, home, library, status, error, browsers, ensureCollection, search, refresh, saveCookies, clearCookies, importCookies]);
+  }, [
+    maps,
+    home,
+    library,
+    status,
+    error,
+    browsers,
+    sections,
+    continuations,
+    ensureCollection,
+    loadMore,
+    search,
+    searchMore,
+    refresh,
+    saveCookies,
+    clearCookies,
+    importCookies,
+  ]);
 
   return <CatalogContext.Provider value={api}>{children}</CatalogContext.Provider>;
 }
