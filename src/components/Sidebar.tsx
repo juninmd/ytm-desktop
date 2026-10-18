@@ -130,9 +130,10 @@ export function Sidebar({ view, onNavigate, session, onSignOut }: Props) {
               id="locale"
               value={locale}
               onChange={(event) => {
-                setLocale(event.target.value as Locale);
-                // The catalogue is re-requested in the new data language.
-                void refresh();
+                const next = event.target.value as Locale;
+                // Refresh once the backend knows the language, so the catalogue
+                // comes back in it.
+                void setLocale(next).then(() => refresh());
               }}
               className="w-full rounded-md border border-line bg-canvas px-2 py-1.5 text-xs text-fg outline-none focus-visible:border-line-strong"
             >

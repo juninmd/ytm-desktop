@@ -206,20 +206,18 @@ export function SignInScreen({ auth }: { auth: AuthApi }) {
           {t("signin.demo")}
         </button>
 
-        <dl className="mt-7 space-y-2.5 text-xs text-subtle">
-          <div className="flex items-center gap-2.5">
+        <ul className="mt-7 space-y-2.5 text-xs text-subtle">
+          <li className="flex items-center gap-2.5">
             <KeyRound className="size-3.5 shrink-0" />
-            <dt className="sr-only">Escopo</dt>
-            <dd>
+            <span>
               {t("signin.scope")} <code className="text-muted">youtube.readonly</code>
-            </dd>
-          </div>
-          <div className="flex items-center gap-2.5">
+            </span>
+          </li>
+          <li className="flex items-center gap-2.5">
             <ShieldCheck className="size-3.5 shrink-0" />
-            <dt className="sr-only">Storage</dt>
-            <dd>{t("signin.storage")}</dd>
-          </div>
-        </dl>
+            <span>{t("signin.storage")}</span>
+          </li>
+        </ul>
 
         {auth.simulated && (
           <p className="mt-6 rounded-md border border-line px-3 py-2 text-[11px] text-subtle">

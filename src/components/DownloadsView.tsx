@@ -33,7 +33,7 @@ export function DownloadsView() {
     <div className="px-6 pb-10">
       <h1 className="pt-2 text-2xl font-bold tracking-tight">{t("downloads.title")}</h1>
       <p className="mt-1 text-sm text-muted">
-        {t("downloads.count", { count: downloads.length, size: formatBytes(totalBytes) })}
+        {t(downloads.length === 1 ? "downloads.countOne" : "downloads.count", { count: downloads.length, size: formatBytes(totalBytes) })}
       </p>
 
       <div className="mt-6 rounded-lg bg-black/25 py-2">

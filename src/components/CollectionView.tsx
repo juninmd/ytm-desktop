@@ -133,7 +133,7 @@ export function CollectionView({
               {collection.year && <Dot />}
               {collection.year && <span>{collection.year}</span>}
               <Dot />
-              <span>{t("common.tracks", { count: tracks.length })}</span>
+              <span>{t(tracks.length === 1 ? "common.track" : "common.tracks", { count: tracks.length })}</span>
               {tracks.length > 0 && (
                 <>
                   <Dot />
@@ -184,7 +184,7 @@ export function CollectionView({
               })),
             )
               .then((failed) => {
-                if (failed > 0) notify(t("collection.downloadFailed", { count: failed }));
+                if (failed > 0) notify(t(failed === 1 ? "collection.downloadFailedOne" : "collection.downloadFailed", { count: failed }));
               })
               .finally(() => setSaving(false));
           }}

@@ -75,7 +75,7 @@ export function ArtistView({
             </h1>
             {tracks.length > 0 && (
               <p className="mt-3 text-sm text-fg/85">
-                {t("artist.topTracks", { count: tracks.length })}
+                {t(tracks.length === 1 ? "artist.topTracksOne" : "artist.topTracks", { count: tracks.length })}
               </p>
             )}
           </div>

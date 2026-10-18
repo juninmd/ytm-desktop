@@ -51,14 +51,31 @@ function readSession(value: unknown): Preferences["session"] {
   if (!value || typeof value !== "object") return undefined;
   const session = value as Record<string, unknown>;
   if (!Array.isArray(session.queue) || session.queue.length === 0) return undefined;
-  const queue = session.queue.filter(
-    (track): track is Track =>
-      Boolean(track) &&
-      typeof track === "object" &&
-      typeof (track as Track).id === "string" &&
-      typeof (track as Track).title === "string",
-  );
+
+  const queue: Track[] = [];
+  for (const entry of session.queue.slice(0, MAX_RESUME_TRACKS)) {
+    if (!entry || typeof entry !== "object") continue;
+    const track = entry as Partial<Track>;
+    if (typeof track.id !== "string" || typeof track.title !== "string") continue;
+    // Rebuilt field by field: the stored blob is user-writable, so only known
+    // shapes are trusted.
+    queue.push({
+      id: track.id,
+      title: track.title,
+      artist: typeof track.artist === "string" ? track.artist : "",
+      album: typeof track.album === "string" ? track.album : "",
+      albumId: typeof track.albumId === "string" ? track.albumId : "",
+      duration:
+        typeof track.duration === "number" && Number.isFinite(track.duration)
+          ? Math.max(0, track.duration)
+          : 0,
+      year: typeof track.year === "number" ? track.year : 0,
+      plays: typeof track.plays === "string" ? track.plays : "",
+      thumbnail: typeof track.thumbnail === "string" ? track.thumbnail : undefined,
+    });
+  }
   if (queue.length === 0) return undefined;
+
   return {
     queue,
     cursor: typeof session.cursor === "number" ? session.cursor : 0,
@@ -74,7 +91,10 @@ function loadPreferences(): Preferences {
     if (!raw) throw new Error("empty");
     const parsed = JSON.parse(raw) as Partial<Preferences>;
     return {
-      volume: typeof parsed.volume === "number" ? parsed.volume : 0.7,
+      volume:
+        typeof parsed.volume === "number" && Number.isFinite(parsed.volume)
+          ? Math.min(Math.max(parsed.volume, 0), 1)
+          : 0.7,
       repeat: parsed.repeat === "all" || parsed.repeat === "one" ? parsed.repeat : "off",
       liked: Array.isArray(parsed.liked) ? parsed.liked : [],
       autoplay: typeof parsed.autoplay === "boolean" ? parsed.autoplay : true,
@@ -295,7 +315,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         state.queue.length > 0
           ? {
               queue: state.queue.slice(0, MAX_RESUME_TRACKS),
-              cursor: state.cursor,
+              // A queue index, not a cursor: `order` is not persisted, so the
+              // restored state rebuilds it as the identity.
+              cursor: state.order[state.cursor] ?? 0,
               position: state.position,
               shuffle: state.shuffle,
               savedAt: Date.now(),
@@ -324,7 +346,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         ...persisted.current,
         session: {
           queue: latest.queue.slice(0, MAX_RESUME_TRACKS),
-          cursor: latest.cursor,
+          cursor: latest.order[latest.cursor] ?? 0,
           position: latest.position,
           shuffle: latest.shuffle,
           savedAt: Date.now(),
@@ -378,7 +400,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           flash(t("player.likeFailed"));
         });
     },
-    [flash],
+    [flash, t],
   );
 
   const syncLiked = useCallback((ids: string[]) => {

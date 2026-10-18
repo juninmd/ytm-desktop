@@ -114,7 +114,9 @@ pub struct LibraryStatus {
 static LOCALE: OnceLock<Mutex<String>> = OnceLock::new();
 
 fn locale_store() -> &'static Mutex<String> {
-    LOCALE.get_or_init(|| Mutex::new("en".to_string()))
+    // Defaults to the interface default (pt-BR), so the first catalogue payload
+    // already matches the UI even before `set_locale` is called.
+    LOCALE.get_or_init(|| Mutex::new("pt-BR".to_string()))
 }
 
 /// The `hl` every catalogue request is sent with.
@@ -122,7 +124,7 @@ fn locale_hl() -> String {
     locale_store()
         .lock()
         .map(|guard| guard.clone())
-        .unwrap_or_else(|_| "en".to_string())
+        .unwrap_or_else(|_| "pt-BR".to_string())
 }
 
 /// Sets the data language used by every catalogue request.

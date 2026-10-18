@@ -43,7 +43,7 @@ export function LibraryCookieForm() {
     try {
       const outcome = await importCookies(browser);
       setState("done");
-      setError(`Cookies lidos do ${outcome.browser} (${outcome.fields.length}).`);
+      setError(t("cookie.read", { browser: outcome.browser, count: outcome.fields.length }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setState("error");
@@ -59,20 +59,12 @@ export function LibraryCookieForm() {
         <h2 className="text-sm font-semibold">{t("cookie.title")}</h2>
       </div>
 
-      <p className="mt-2 text-sm text-muted">
-        {t("cookie.intro")}
-        API privada do YouTube Music exige o <code className="text-fg/90">Cookie</code> do navegador
-        — ela não aceita o token do login.
-      </p>
+      <p className="mt-2 text-sm text-muted">{t("cookie.intro")}</p>
 
       {browsers.length > 0 && (
         <div className="mt-4 rounded-md border border-line bg-canvas/60 p-3">
           <p className="text-xs font-medium text-fg/90">{t("cookie.browserHeading")}</p>
-          <p className="mt-1 text-xs text-subtle">
-            {t("cookie.browserHint")}
-            Chrome/Edge, feche o navegador antes — ele trava o banco de cookies enquanto está
-            aberto; o Firefox lê direto.
-          </p>
+          <p className="mt-1 text-xs text-subtle">{t("cookie.browserHint")}</p>
           <div className="mt-2.5 flex items-center gap-2">
             <select
               value={browser}

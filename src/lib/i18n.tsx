@@ -2,7 +2,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -83,6 +82,7 @@ const pt = {
   "search.filterArtists": "Artistas",
   "search.filterPlaylists": "Playlists",
   "common.tracks": "{count} faixas",
+  "common.track": "{count} faixa",
 
   "collection.loadingFailed": "Não foi possível abrir esta coleção",
   "collection.loadingFailedHint": "Verifique a conexão e tente de novo.",
@@ -94,7 +94,8 @@ const pt = {
   "collection.unlike": "Remover das curtidas",
   "collection.download": "Baixar coleção",
   "collection.downloading": "Baixando coleção",
-  "collection.downloadFailed": "{count} faixa(s) não puderam ser baixadas.",
+  "collection.downloadFailed": "{count} faixas não puderam ser baixadas.",
+  "collection.downloadFailedOne": "{count} faixa não pôde ser baixada.",
 
   "format.album": "Álbum",
   "format.ep": "EP",
@@ -159,11 +160,13 @@ const pt = {
   "lyrics.plain": "Sem sincronia",
   "lyrics.source": "Letras via LRCLIB (lrclib.net) — artista, título e álbum são enviados para a busca.",
 
-  "artist.topTracks": "{count} faixa(s) em destaque",
+  "artist.topTracks": "{count} faixas em destaque",
+  "artist.topTracksOne": "{count} faixa em destaque",
   "artist.empty": "Nenhuma música em destaque.",
 
   "downloads.title": "Baixados",
-  "downloads.count": "{count} faixa(s) · {size} no disco",
+  "downloads.count": "{count} faixas · {size} no disco",
+  "downloads.countOne": "{count} faixa · {size} no disco",
   "downloads.empty": "Nada baixado ainda. Use o botão de download em uma faixa para ouvi-la sem internet.",
   "downloads.remove": "Remover {title} dos baixados",
   "downloads.removeFailed": "Não foi possível remover {title}.",
@@ -183,6 +186,7 @@ const pt = {
   "cookie.disconnect": "Desconectar",
   "cookie.footnote":
     "O valor fica no cofre do sistema operacional, nunca no localStorage. No Chrome/Edge, feche o navegador para a leitura automática; o Firefox funciona com ele aberto.",
+  "cookie.read": "Cookies lidos do {browser} ({count}).",
 
   "signin.title": "Entrar no YTM Desktop",
   "signin.intro":
@@ -214,6 +218,8 @@ const pt = {
   "signin.footer": "Binário de ~8 MB · sem Electron · WebView2 do sistema",
   "signin.simulated":
     "Pré-visualização no navegador: o fluxo de dispositivo está simulado. No app Tauri, as mesmas chamadas chegam ao backend Rust.",
+  "auth.denied": "Autorização recusada nesta conta.",
+  "auth.expired": "O código expirou. Gere um novo para continuar.",
 
   "app.loading": "Carregando o player",
   "app.noAudio": "Áudio real indisponível:",
@@ -281,6 +287,7 @@ const en: Record<MessageKey, string> = {
   "search.filterArtists": "Artists",
   "search.filterPlaylists": "Playlists",
   "common.tracks": "{count} tracks",
+  "common.track": "{count} track",
 
   "collection.loadingFailed": "Could not open this collection",
   "collection.loadingFailedHint": "Check the connection and try again.",
@@ -292,7 +299,8 @@ const en: Record<MessageKey, string> = {
   "collection.unlike": "Remove from liked",
   "collection.download": "Download collection",
   "collection.downloading": "Downloading collection",
-  "collection.downloadFailed": "{count} track(s) could not be downloaded.",
+  "collection.downloadFailed": "{count} tracks could not be downloaded.",
+  "collection.downloadFailedOne": "{count} track could not be downloaded.",
 
   "format.album": "Album",
   "format.ep": "EP",
@@ -357,11 +365,13 @@ const en: Record<MessageKey, string> = {
   "lyrics.plain": "Not synced",
   "lyrics.source": "Lyrics via LRCLIB (lrclib.net) — the artist, title and album are sent for the lookup.",
 
-  "artist.topTracks": "{count} featured track(s)",
+  "artist.topTracks": "{count} featured tracks",
+  "artist.topTracksOne": "{count} featured track",
   "artist.empty": "No featured songs.",
 
   "downloads.title": "Downloads",
-  "downloads.count": "{count} track(s) · {size} on disk",
+  "downloads.count": "{count} tracks · {size} on disk",
+  "downloads.countOne": "{count} track · {size} on disk",
   "downloads.empty": "Nothing downloaded yet. Use the download button on a track to listen without the internet.",
   "downloads.remove": "Remove {title} from downloads",
   "downloads.removeFailed": "Could not remove {title}.",
@@ -381,6 +391,7 @@ const en: Record<MessageKey, string> = {
   "cookie.disconnect": "Disconnect",
   "cookie.footnote":
     "The value lives in the OS credential vault, never in localStorage. On Chrome/Edge, close the browser for the automatic read; Firefox works while open.",
+  "cookie.read": "Cookies read from {browser} ({count}).",
 
   "signin.title": "Sign in to YTM Desktop",
   "signin.intro":
@@ -412,6 +423,8 @@ const en: Record<MessageKey, string> = {
   "signin.footer": "~8 MB binary · no Electron · the system WebView2",
   "signin.simulated":
     "Browser preview: the device flow is simulated. In the Tauri app the same calls reach the Rust backend.",
+  "auth.denied": "Authorisation refused for this account.",
+  "auth.expired": "The code expired. Generate a new one to continue.",
 
   "app.loading": "Loading the player",
   "app.noAudio": "Real audio unavailable:",
@@ -428,7 +441,8 @@ const STORAGE_KEY = "ytm-desktop:locale";
 
 export type I18nApi = {
   locale: Locale;
-  setLocale: (locale: Locale) => void;
+  /** Switches the language and applies it to the data layer before resolving. */
+  setLocale: (locale: Locale) => Promise<void>;
   t: (key: MessageKey, vars?: Record<string, string | number>) => string;
 };
 
@@ -445,21 +459,25 @@ function initialLocale(): Locale {
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    const initial = initialLocale();
+    // Applied during the first render, before any child mounts and fetches the
+    // catalogue, so the very first payload already uses the right language.
+    void setDataLocale(initial).catch(() => {});
+    return initial;
+  });
 
-  const setLocale = useCallback((next: Locale) => {
+  const setLocale = useCallback(async (next: Locale) => {
     setLocaleState(next);
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {
       // Preferences are a nicety, never a failure.
     }
+    // Resolves once the backend knows the language, so a caller can refresh the
+    // catalogue afterwards and get it in the new language.
+    await setDataLocale(next).catch(() => {});
   }, []);
-
-  // The catalogue language follows the interface language.
-  useEffect(() => {
-    void setDataLocale(locale).catch(() => {});
-  }, [locale]);
 
   const api = useMemo<I18nApi>(() => {
     const dictionary = DICTIONARIES[locale];
@@ -470,7 +488,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         const template = dictionary[key] ?? key;
         if (!vars) return template;
         return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-          name in vars ? String(vars[name]) : match,
+          Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match,
         );
       },
     };
