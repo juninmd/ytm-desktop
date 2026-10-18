@@ -21,6 +21,7 @@ import {
 } from "../lib/music";
 import {
   createInitialState,
+  MAX_RESUME_TRACKS,
   reducer,
   type Preferences,
 } from "./playerReducer";
@@ -44,6 +45,28 @@ export type PlaybackEngine = "sim" | "audio";
 
 const STORAGE_KEY = "ytm-desktop:preferences";
 
+/** A track is worth resuming only if it still looks like one. */
+function readSession(value: unknown): Preferences["session"] {
+  if (!value || typeof value !== "object") return undefined;
+  const session = value as Record<string, unknown>;
+  if (!Array.isArray(session.queue) || session.queue.length === 0) return undefined;
+  const queue = session.queue.filter(
+    (track): track is Track =>
+      Boolean(track) &&
+      typeof track === "object" &&
+      typeof (track as Track).id === "string" &&
+      typeof (track as Track).title === "string",
+  );
+  if (queue.length === 0) return undefined;
+  return {
+    queue,
+    cursor: typeof session.cursor === "number" ? session.cursor : 0,
+    position: typeof session.position === "number" ? session.position : 0,
+    shuffle: session.shuffle === true,
+    savedAt: typeof session.savedAt === "number" ? session.savedAt : 0,
+  };
+}
+
 function loadPreferences(): Preferences {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -54,9 +77,18 @@ function loadPreferences(): Preferences {
       repeat: parsed.repeat === "all" || parsed.repeat === "one" ? parsed.repeat : "off",
       liked: Array.isArray(parsed.liked) ? parsed.liked : [],
       autoplay: typeof parsed.autoplay === "boolean" ? parsed.autoplay : true,
+      session: readSession(parsed.session),
     };
   } catch {
     return { volume: 0.7, repeat: "off", liked: [], autoplay: true };
+  }
+}
+
+function writePreferences(preferences: Preferences): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+  } catch {
+    // Private mode / quota: preferences are a nicety, never a failure.
   }
 }
 
@@ -246,19 +278,60 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(timer);
   }, [state.isPlaying, engine]);
 
+  // The last persisted shape, so either effect below can write the whole thing.
+  const persisted = useRef<Preferences>(loadPreferences());
+
+  // Structural changes (and the pause/unpause beat) write immediately.
   useEffect(() => {
-    const preferences: Preferences = {
+    persisted.current = {
+      ...persisted.current,
       volume: state.volume,
       repeat: state.repeat,
       liked: state.liked,
       autoplay: state.autoplay,
+      session:
+        state.queue.length > 0
+          ? {
+              queue: state.queue.slice(0, MAX_RESUME_TRACKS),
+              cursor: state.cursor,
+              position: state.position,
+              shuffle: state.shuffle,
+              savedAt: Date.now(),
+            }
+          : undefined,
     };
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
-    } catch {
-      // Private mode / quota: preferences are a nicety, never a failure.
-    }
-  }, [state.volume, state.repeat, state.liked, state.autoplay]);
+    writePreferences(persisted.current);
+  }, [
+    state.volume,
+    state.repeat,
+    state.liked,
+    state.autoplay,
+    state.queue,
+    state.cursor,
+    state.shuffle,
+    state.isPlaying,
+  ]);
+
+  // While playing, the playhead is saved periodically rather than every tick.
+  useEffect(() => {
+    if (!state.isPlaying) return;
+    const timer = window.setInterval(() => {
+      const latest = stateRef.current;
+      if (latest.queue.length === 0) return;
+      persisted.current = {
+        ...persisted.current,
+        session: {
+          queue: latest.queue.slice(0, MAX_RESUME_TRACKS),
+          cursor: latest.cursor,
+          position: latest.position,
+          shuffle: latest.shuffle,
+          savedAt: Date.now(),
+        },
+      };
+      writePreferences(persisted.current);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [state.isPlaying]);
 
   const play = useCallback((queue: Track[], startIndex = 0) => {
     dispatch({ type: "play", queue, startIndex });
