@@ -1,6 +1,7 @@
 mod auth;
 mod browser_cookies;
 mod innertube;
+mod lyrics;
 mod stream;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -23,6 +24,7 @@ pub fn run() {
             innertube::music_browse,
             innertube::music_library,
             innertube::music_rate,
+            lyrics::music_lyrics,
             stream::music_stream,
             stream::music_prefetch,
             stream::music_clear_stream_cache,

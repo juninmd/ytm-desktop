@@ -149,8 +149,11 @@ pub fn library_available() -> bool {
 }
 
 async fn post(endpoint: &str, body: Value) -> Result<Value, String> {
+    // Bounded, so a stalled endpoint cannot hang a command (the lyrics fallback
+    // especially) forever.
     let mut request = auth::http()
         .post(format!("{ENDPOINT}{endpoint}"))
+        .timeout(std::time::Duration::from_secs(15))
         .json(&body);
     for (name, value) in origin_headers() {
         request = request.header(name, value);
@@ -434,6 +437,63 @@ pub async fn music_rate(video_id: String, rating: String) -> Result<bool, String
     .await?;
 
     Ok(true)
+}
+
+/// The official lyrics text for a track, or `None` when the track has none.
+///
+/// InnerTube serves lyrics without timing (the footer names the provider), so
+/// these are only a fallback when no synchronised source is available.
+pub(crate) async fn official_lyrics(video_id: &str) -> Option<String> {
+    let next = post(
+        "next",
+        json!({ "context": context(), "videoId": video_id, "isAudioOnly": true }),
+    )
+    .await
+    .ok()?;
+
+    let browse_id = lyrics_tab_browse_id(&next)?;
+
+    let payload = post(
+        "browse",
+        json!({ "context": context(), "browseId": browse_id }),
+    )
+    .await
+    .ok()?;
+
+    lyrics_text(&payload)
+}
+
+/// The `browseId` of the "Lyrics" tab in a watch-next payload, if present.
+fn lyrics_tab_browse_id(payload: &Value) -> Option<String> {
+    collect(payload, "tabRenderer")
+        .into_iter()
+        .find(|tab| {
+            tab.get("endpoint")
+                .and_then(|endpoint| endpoint.get("browseEndpoint"))
+                .and_then(|browse| browse.get("browseEndpointContextSupportedConfigs"))
+                .and_then(|configs| configs.get("browseEndpointContextMusicConfig"))
+                .and_then(|music| music.get("pageType"))
+                .and_then(Value::as_str)
+                == Some("MUSIC_PAGE_TYPE_TRACK_LYRICS")
+        })
+        .and_then(|tab| tab.get("endpoint"))
+        .and_then(|endpoint| endpoint.get("browseEndpoint"))
+        .and_then(|browse| browse.get("browseId"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// The lyrics text out of a lyrics-browse payload.
+fn lyrics_text(payload: &Value) -> Option<String> {
+    let text = collect(payload, "musicDescriptionShelfRenderer")
+        .first()
+        .and_then(|shelf| shelf.get("description"))
+        .map(text_of)?;
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1213,7 +1273,46 @@ mod tests {
       ] } }
     }"#;
 
-    /// Opt-in live check (`YTM_LIVE=1`): the parser against the real API.
+    #[test]
+    fn reads_the_lyrics_tab_and_its_text() {
+        let next = serde_json::from_str(LYRICS_TABS).unwrap();
+        assert_eq!(lyrics_tab_browse_id(&next).as_deref(), Some("MPLYt_demo"));
+
+        let payload = serde_json::from_str(LYRICS_PAGE).unwrap();
+        assert_eq!(
+            lyrics_text(&payload).as_deref(),
+            Some("first line\nsecond line")
+        );
+
+        // A page without lyrics yields nothing rather than panicking.
+        let empty = serde_json::from_str(r#"{"contents":{}}"#).unwrap();
+        assert!(lyrics_text(&empty).is_none());
+    }
+
+    const LYRICS_TABS: &str = r#"{
+      "contents": { "tabRenderer": [
+        { "title": "Up next", "content": {} },
+        { "title": "Lyrics", "endpoint": { "browseEndpoint": {
+          "browseId": "MPLYt_demo",
+          "browseEndpointContextSupportedConfigs": { "browseEndpointContextMusicConfig": {
+            "pageType": "MUSIC_PAGE_TYPE_TRACK_LYRICS" } } } } },
+        { "title": "Related", "endpoint": { "browseEndpoint": {
+          "browseId": "MPTRt_demo",
+          "browseEndpointContextSupportedConfigs": { "browseEndpointContextMusicConfig": {
+            "pageType": "MUSIC_PAGE_TYPE_TRACK_RELATED" } } } } }
+      ] }
+    }"#;
+
+    const LYRICS_PAGE: &str = r#"{
+      "contents": { "musicDescriptionShelfRenderer": {
+        "description": { "runs": [ { "text": "first line\nsecond line" } ] },
+        "footer": { "runs": [ { "text": "Source: Musixmatch" } ] }
+      } }
+    }"#;
+
+    /// Hits the real InnerTube API. Opt-in (`YTM_LIVE=1`) so CI stays offline and
+    /// deterministic; run it locally to confirm the parser still matches reality
+    /// when YouTube changes a response shape.
     #[test]
     fn live_endpoints_match_the_parser() {
         if std::env::var("YTM_LIVE").is_err() {

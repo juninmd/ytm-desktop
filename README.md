@@ -37,6 +37,7 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 | Sign-in | **Real** OAuth 2.0 device flow in Rust against Google; sign-out revokes the grant |
 | Personal library (playlists, liked songs, saved albums) | **Real**, once the browser cookie is connected — InnerTube needs `Cookie` + `SAPISIDHASH`, not a bearer token |
 | Liking a track | **Real** — writes through to the account when the library is connected (optimistic, with rollback); local-only otherwise |
+| Lyrics | **Real** karaoke — synchronised lines from [LRCLIB](https://lrclib.net) (current line highlighted, click to seek); falls back to the official plain text from YouTube Music when no timing exists. Opening the panel sends the track's artist/title/album to LRCLIB; nothing is sent while it is closed, and nothing is persisted |
 | Token / cookie storage | Real OS credential vault (`keyring`: Windows Credential Manager / Keychain / Secret Service) |
 | Browser preview (`npm run dev`) | Mock catalogue + simulated transport, labelled as such in the UI |
 
@@ -152,11 +153,12 @@ src/
   lib/cover.ts             deterministic artwork from a hash
   components/              Sidebar, TopBar, HomeView, CollectionView,
                            TrackTable, PlayerBar, QueuePanel, SignInScreen,
-                           LibraryCookieForm
+                           LibraryCookieForm, LyricsPanel
 src-tauri/src/
   auth.rs                  device flow, token + cookie vault, SAPISIDHASH signing
   innertube.rs             real YouTube Music catalogue client (search/browse/home/library/rate)
   browser_cookies.rs       reads the browser cookie store through yt-dlp
+  lyrics.rs                timed lyrics (LRCLIB) with a plain-text fallback
   stream.rs                real audio resolution via yt-dlp
 tools/screenshots.mjs      Playwright harness that produced the preview images
 tools/e2e.mjs              Playwright harness for the desktop UI (stubbed backend)

@@ -148,6 +148,40 @@ export async function rateTrack(trackId: string, rating: "like" | "none"): Promi
   return invoke<boolean>("music_rate", { trackId, rating });
 }
 
+export type LyricLine = { time: number; text: string };
+export type Lyrics = { synced: boolean; source: string; lines: LyricLine[] };
+export type LyricsQuery = {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+};
+
+/** Timed lyrics when available, otherwise the official plain text. */
+export async function fetchLyrics(query: LyricsQuery): Promise<Lyrics> {
+  if (isDesktop()) return invoke<Lyrics>("music_lyrics", { query });
+  return demoLyrics(query);
+}
+
+/** A small synchronised example so the panel is reviewable in the browser. */
+function demoLyrics(track: LyricsQuery): Lyrics {
+  const lines = [
+    "Segure o microfone imaginário",
+    "a letra acompanha a reprodução",
+    "a linha atual fica em destaque",
+    "e você pode clicar para pular",
+    "isto é a pré-visualização",
+    "do modo karaokê",
+  ];
+  const step = track.duration > 0 ? track.duration / (lines.length + 1) : 12;
+  return {
+    synced: true,
+    source: "demonstração",
+    lines: lines.map((text, index) => ({ time: step * (index + 1), text })),
+  };
+}
+
 function normalize(value: string): string {
   return value
     .toLowerCase()

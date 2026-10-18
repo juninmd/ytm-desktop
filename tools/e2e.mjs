@@ -119,6 +119,16 @@ await page.addInitScript(
             return { available: false, binary: null, detail: "stub: yt-dlp ausente" };
           case "music_rate":
             return true;
+          case "music_lyrics":
+            return {
+              synced: true,
+              source: "stub",
+              lines: [
+                { time: 0, text: "Primeira linha" },
+                { time: 30, text: "Segunda linha" },
+                { time: 60, text: "Terceira linha" },
+              ],
+            };
           case "cookie_browsers":
             return ["firefox", "chrome"];
           case "auth_save_cookies":
@@ -210,6 +220,25 @@ await page.waitForFunction(
 check("liking a track writes to the account", await invoked("music_rate"));
 check("simulated engine is labelled", (await page.locator("text=simulado").count()) > 0);
 await shot("13-desktop-search-like");
+
+// 6. Karaoke lyrics: the panel highlights the current line and can seek.
+await page.getByRole("button", { name: "Mostrar letra" }).click();
+await page.waitForSelector("text=Sincronizada");
+check("lyrics panel loads synced lyrics", await invoked("music_lyrics"));
+check(
+  "karaoke mode reports the source",
+  (await page.locator("text=Sincronizada").count()) > 0,
+);
+await shot("15-desktop-lyrics");
+
+// 7. The queue and the lyrics share one slot: opening one closes the other,
+// whichever button is used (the top bar's too).
+await page.getByRole("button", { name: "Mostrar fila" }).first().click();
+await page.waitForSelector("text=Fila de reprodução");
+check(
+  "opening the queue closes the lyrics",
+  (await page.locator("h2", { hasText: "Letra" }).count()) === 0,
+);
 
 await browser.close();
 
