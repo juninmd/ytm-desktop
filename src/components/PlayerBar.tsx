@@ -20,9 +20,14 @@ import { usePlayer } from "../hooks/usePlayer";
 import { cn } from "../lib/cn";
 import { formatTime } from "../lib/format";
 
-type Props = { queueOpen: boolean; onToggleQueue: () => void };
+type Props = {
+  queueOpen: boolean;
+  onToggleQueue: () => void;
+  lyricsOpen: boolean;
+  onToggleLyrics: () => void;
+};
 
-export function PlayerBar({ queueOpen, onToggleQueue }: Props) {
+export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics }: Props) {
   const {
     state,
     current,
@@ -142,7 +147,12 @@ export function PlayerBar({ queueOpen, onToggleQueue }: Props) {
       </div>
 
       <div className="flex flex-1 items-center justify-end gap-1">
-        <IconButton label="Letra (em breve)" className="hidden 2xl:grid" disabled>
+        <IconButton
+          label={lyricsOpen ? "Ocultar letra" : "Mostrar letra"}
+          active={lyricsOpen}
+          onClick={onToggleLyrics}
+          disabled={!current}
+        >
           <Mic2 className="size-4" />
         </IconButton>
         <IconButton

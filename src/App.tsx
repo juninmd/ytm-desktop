@@ -4,6 +4,7 @@ import { CollectionView } from "./components/CollectionView";
 import { ArtistView } from "./components/ArtistView";
 import { HomeView } from "./components/HomeView";
 import { LibraryView } from "./components/LibraryView";
+import { LyricsPanel } from "./components/LyricsPanel";
 import { PlayerBar } from "./components/PlayerBar";
 import { QueuePanel } from "./components/QueuePanel";
 import { SearchView } from "./components/SearchView";
@@ -75,6 +76,17 @@ function Workspace({
   const [history, setHistory] = useState<View[]>([]);
   const [query, setQuery] = useState("");
   const [queueOpen, setQueueOpen] = useState(false);
+  const [lyricsOpen, setLyricsOpen] = useState(false);
+
+  // The queue and the lyrics share the same slot, so each closes the other.
+  const toggleQueue = () => {
+    setQueueOpen((open) => !open);
+    setLyricsOpen(false);
+  };
+  const toggleLyrics = () => {
+    setLyricsOpen((open) => !open);
+    setQueueOpen(false);
+  };
 
   const navigate = (next: View) => {
     setHistory((stack) => [...stack, view]);
@@ -210,7 +222,7 @@ function Workspace({
             onQueryChange={setQuery}
             onBack={goBack}
             queueOpen={queueOpen}
-            onToggleQueue={() => setQueueOpen((open) => !open)}
+            onToggleQueue={toggleQueue}
           />
           {player.resolverAvailable === false && (
             <div className="flex items-start gap-2.5 border-b border-line bg-accent/8 px-4 py-2.5 text-xs">
@@ -228,9 +240,15 @@ function Workspace({
         </main>
 
         {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
+        {lyricsOpen && <LyricsPanel onClose={() => setLyricsOpen(false)} />}
       </div>
 
-      <PlayerBar queueOpen={queueOpen} onToggleQueue={() => setQueueOpen((open) => !open)} />
+      <PlayerBar
+        queueOpen={queueOpen}
+        onToggleQueue={toggleQueue}
+        lyricsOpen={lyricsOpen}
+        onToggleLyrics={toggleLyrics}
+      />
 
       <div className="sr-only" aria-live="polite">
         {player.current ? `Tocando ${player.current.title}, de ${player.current.artist}` : ""}
