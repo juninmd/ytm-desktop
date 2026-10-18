@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { isDesktop } from "./auth";
 import * as mock from "../data/catalog";
 import type { Collection, Shelf, Track } from "../types";
@@ -26,7 +26,14 @@ export type CatalogPage = {
 export type HomeData = { quickPicks: string[]; shelves: Shelf[]; collections: Collection[] };
 export type LibraryData = { available: boolean; collections: Collection[]; tracks: Track[] };
 
-export type StreamInfo = { url: string; ext: string; expiresIn: number; trackId: string };
+export type StreamInfo = {
+  url: string;
+  ext: string;
+  expiresIn: number;
+  trackId: string;
+  /** True when `url` is a local file path (downloaded), not a remote url. */
+  local: boolean;
+};
 export type ResolverStatus = { available: boolean; binary: string | null; detail: string | null };
 
 export async function fetchHome(): Promise<HomeData> {
@@ -131,6 +138,54 @@ export async function resolveStream(trackId: string): Promise<StreamInfo> {
 export async function prefetchStream(trackId: string): Promise<boolean> {
   if (!isDesktop()) return false;
   return invoke<boolean>("music_prefetch", { trackId });
+}
+
+/** The network stream, used when a downloaded file cannot be played. */
+export async function resolveRemoteStream(trackId: string): Promise<StreamInfo> {
+  if (!isDesktop()) {
+    throw new Error("O áudio real só existe no app desktop (Tauri).");
+  }
+  return invoke<StreamInfo>("music_remote_stream", { trackId });
+}
+
+/** The webview url for a downloaded file (asset protocol). */
+export function localStreamUrl(path: string): string {
+  return convertFileSrc(path);
+}
+
+export type DownloadEntry = {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  /** Absolute path on disk. */
+  file: string;
+  bytes: number;
+  downloadedAt: number;
+};
+
+export type DownloadRequest = {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+};
+
+/** Downloads a track for offline playback (or returns the existing file). */
+export async function downloadTrack(track: DownloadRequest): Promise<DownloadEntry | null> {
+  if (!isDesktop()) return null;
+  return invoke<DownloadEntry>("music_download", { track });
+}
+
+export async function fetchDownloads(): Promise<DownloadEntry[]> {
+  if (isDesktop()) return invoke<DownloadEntry[]>("music_downloads");
+  return [];
+}
+
+export async function deleteDownload(trackId: string): Promise<void> {
+  if (isDesktop()) await invoke("music_delete_download", { trackId });
 }
 
 /** Whether the desktop backend can actually resolve real audio (yt-dlp). */

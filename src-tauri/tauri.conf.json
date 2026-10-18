@@ -24,7 +24,11 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: https://*.googleusercontent.com https://*.ytimg.com https://*.ggpht.com; media-src 'self' https://*.googlevideo.com; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/downloads/**"]
+      },
+      "csp": "default-src 'self'; img-src 'self' data: https://*.googleusercontent.com https://*.ytimg.com https://*.ggpht.com; media-src 'self' asset: http://asset.localhost https://*.googlevideo.com; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {

@@ -1,8 +1,10 @@
-import { Clock, Heart, Play } from "lucide-react";
+import { useState } from "react";
+import { Check, Clock, Download, Heart, Loader2, Play } from "lucide-react";
 import { Cover } from "./Cover";
 import { Eq } from "./ui/Eq";
 import { IconButton } from "./ui/IconButton";
 import { usePlayer } from "../hooks/usePlayer";
+import { useCatalog } from "../hooks/useCatalog";
 import { cn } from "../lib/cn";
 import { formatTime } from "../lib/format";
 import type { Track } from "../types";
@@ -29,8 +31,24 @@ export function TrackTable({
   showAlbum = true,
   emptyLabel = "Nada por aqui ainda.",
 }: Props) {
-  const { play, current, isLiked, toggleLike, state } = usePlayer();
+  const { play, current, isLiked, toggleLike, state, notify } = usePlayer();
+  const { download, isDownloaded } = useCatalog();
+  const [busy, setBusy] = useState<string[]>([]);
   const row = showAlbum ? ROW["with-album"] : ROW["no-album"];
+
+  const save = (track: Track) => {
+    if (busy.includes(track.id)) return; // a double click must not spawn twice
+    setBusy((current) => [...current, track.id]);
+    void download({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      duration: track.duration,
+    })
+      .catch(() => notify(`Não foi possível baixar ${track.title}.`))
+      .finally(() => setBusy((current) => current.filter((id) => id !== track.id)));
+  };
 
   if (tracks.length === 0) {
     return <p className="px-4 py-10 text-center text-sm text-muted">{emptyLabel}</p>;
@@ -60,6 +78,7 @@ export function TrackTable({
         {tracks.map((track, index) => {
           const playing = current?.id === track.id;
           const liked = isLiked(track.id);
+          const saved = isDownloaded(track.id);
           return (
             <div
               key={track.id}
@@ -119,6 +138,20 @@ export function TrackTable({
               </span>
 
               <span role="cell" className="flex items-center justify-end gap-1">
+                <IconButton
+                  label={saved ? `${track.title} já está baixada` : `Baixar ${track.title}`}
+                  onClick={() => save(track)}
+                  disabled={saved || busy.includes(track.id)}
+                  className={cn("opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100", saved && "opacity-100")}
+                >
+                  {busy.includes(track.id) ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : saved ? (
+                    <Check className="size-4 text-accent" />
+                  ) : (
+                    <Download className="size-4" />
+                  )}
+                </IconButton>
                 <IconButton
                   label={liked ? `Remover ${track.title} das curtidas` : `Curtir ${track.title}`}
                   onClick={() => toggleLike(track.id)}

@@ -61,6 +61,7 @@ page.on("pageerror", (error) => consoleErrors.push(String(error)));
 await page.addInitScript(
   ({ track, home }) => {
     const calls = [];
+    const downloads = [];
     window.__invokeCalls = calls;
     window.__TAURI_INTERNALS__ = {
       transformCallback: () => 0,
@@ -129,6 +130,24 @@ await page.addInitScript(
                 { time: 60, text: "Terceira linha" },
               ],
             };
+          case "music_download": {
+            const entry = {
+              id: args?.track?.id ?? "v1",
+              title: args?.track?.title ?? "Faixa do Backend",
+              artist: args?.track?.artist ?? "Artista Real",
+              album: args?.track?.album ?? "Álbum Real",
+              duration: args?.track?.duration ?? 214,
+              file: "C:/stub/v1.m4a",
+              bytes: 2659947,
+              downloadedAt: 1700000000,
+            };
+            downloads.push(entry);
+            return entry;
+          }
+          case "music_downloads":
+            return downloads;
+          case "music_delete_download":
+            return null;
           case "cookie_browsers":
             return ["firefox", "chrome"];
           case "auth_save_cookies":
@@ -239,6 +258,20 @@ check(
   "opening the queue closes the lyrics",
   (await page.locator("h2", { hasText: "Letra" }).count()) === 0,
 );
+
+// 8. Downloading a track reaches the backend, and it shows under "Baixados".
+await page.getByRole("button", { name: "Baixar Faixa do Backend" }).first().click();
+await page.waitForFunction(
+  () => window.__invokeCalls.some((call) => call.cmd === "music_download"),
+  null,
+  { timeout: 3000 },
+);
+check("downloading a track reaches the backend", await invoked("music_download"));
+
+await page.getByRole("button", { name: "Baixados", exact: true }).click();
+await page.waitForSelector("text=Baixados");
+check("downloads view lists the saved track", (await page.locator("text=Faixa do Backend").count()) > 0);
+await shot("16-desktop-downloads");
 
 await browser.close();
 

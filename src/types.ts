@@ -79,6 +79,7 @@ export type PlayerState = {
 export type View =
   | { kind: "home" }
   | { kind: "library" }
+  | { kind: "downloads" }
   | { kind: "album"; id: string }
   | { kind: "playlist"; id: string }
   | { kind: "artist"; id: string };

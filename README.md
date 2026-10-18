@@ -34,6 +34,7 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 | Artist pages | **Real** — name, top songs and the artist's rows, from the catalogue |
 | Autoplay / radio | **Real** — when the queue ends, the track's radio continues it (toggleable in the queue) |
 | Stream cache | Resolved urls are cached until they expire; the next track is prefetched |
+| Offline downloads | **Real** — a track is saved to disk with `yt-dlp` and played from the file (asset protocol), so it works without a network |
 | Sign-in | **Real** OAuth 2.0 device flow in Rust against Google; sign-out revokes the grant |
 | Personal library (playlists, liked songs, saved albums) | **Real**, once the browser cookie is connected — InnerTube needs `Cookie` + `SAPISIDHASH`, not a bearer token |
 | Liking a track | **Real** — writes through to the account when the library is connected (optimistic, with rollback); local-only otherwise |
@@ -153,12 +154,13 @@ src/
   lib/cover.ts             deterministic artwork from a hash
   components/              Sidebar, TopBar, HomeView, CollectionView,
                            TrackTable, PlayerBar, QueuePanel, SignInScreen,
-                           LibraryCookieForm, LyricsPanel
+                           LibraryCookieForm, LyricsPanel, DownloadsView
 src-tauri/src/
   auth.rs                  device flow, token + cookie vault, SAPISIDHASH signing
   innertube.rs             real YouTube Music catalogue client (search/browse/home/library/rate)
   browser_cookies.rs       reads the browser cookie store through yt-dlp
   lyrics.rs                timed lyrics (LRCLIB) with a plain-text fallback
+  downloads.rs             offline downloads (yt-dlp to disk + an index)
   stream.rs                real audio resolution via yt-dlp
 tools/screenshots.mjs      Playwright harness that produced the preview images
 tools/e2e.mjs              Playwright harness for the desktop UI (stubbed backend)

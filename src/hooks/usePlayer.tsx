@@ -11,7 +11,14 @@ import {
 } from "react";
 import type { PlayerState, Track } from "../types";
 import { isDesktop } from "../lib/auth";
-import { prefetchStream, rateTrack, resolveStream, resolverStatus } from "../lib/music";
+import {
+  localStreamUrl,
+  prefetchStream,
+  rateTrack,
+  resolveRemoteStream,
+  resolveStream,
+  resolverStatus,
+} from "../lib/music";
 import {
   createInitialState,
   reducer,
@@ -80,6 +87,8 @@ export type PlayerApi = {
   /** Dismissible, short-lived message (e.g. a failed account write). */
   notice: string | null;
   dismissNotice: () => void;
+  /** Shows a short-lived message (e.g. a failed download). */
+  notify: (message: string) => void;
   isLiked: (id: string) => boolean;
   isCurrent: (id: string) => boolean;
 };
@@ -145,10 +154,40 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Metadata loaded: the element can actually play, so claim real audio.
       setEngine("audio");
     };
+    let usedLocal = false;
+    let triedRemote = false;
+
+    /** Loads a stream, preferring the downloaded file. */
+    const start = async (allowLocal: boolean) => {
+      const info = allowLocal
+        ? await resolveStream(currentId)
+        : await resolveRemoteStream(currentId);
+      if (cancelled) return;
+      usedLocal = info.local;
+      audio.volume = stateRef.current.volume;
+      audio.muted = stateRef.current.muted;
+      audio.src = info.local ? localStreamUrl(info.url) : info.url;
+      audio.load();
+      if (stateRef.current.isPlaying) {
+        // A rejected `play()` means no real sound: degrade to the simulation.
+        await audio.play().catch(() => {
+          if (!cancelled) setEngine("sim");
+        });
+      }
+    };
+
     const onError = () => {
-      // A dead or rejected stream must not leave the UI stuck on a silent
-      // "playing" state — fall back to the simulated transport.
-      if (!cancelled) setEngine("sim");
+      if (cancelled) return;
+      // A downloaded file that will not play (e.g. the asset scope) falls back
+      // to the network once, then to the simulated transport.
+      if (usedLocal && !triedRemote) {
+        triedRemote = true;
+        void start(false).catch(() => {
+          if (!cancelled) setEngine("sim");
+        });
+        return;
+      }
+      setEngine("sim");
     };
     const onEnded = () => {
       const latest = stateRef.current;
@@ -164,26 +203,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     audio.addEventListener("error", onError);
     audio.addEventListener("ended", onEnded);
 
-    void (async () => {
-      try {
-        const info = await resolveStream(currentId);
-        if (cancelled) return;
-        audio.volume = stateRef.current.volume;
-        audio.muted = stateRef.current.muted;
-        audio.src = info.url;
-        audio.load();
-        if (stateRef.current.isPlaying) {
-          // A rejected `play()` means no real sound: degrade to the simulation.
-          await audio.play().catch(() => {
-            if (!cancelled) setEngine("sim");
-          });
-        }
-      } catch {
-        // No real stream available (yt-dlp missing, offline): the simulated
-        // transport takes over instead of leaving the user with a dead player.
-        if (!cancelled) setEngine("sim");
-      }
-    })();
+    void start(true).catch(() => {
+      // No real stream available (yt-dlp missing, offline): the simulated
+      // transport takes over instead of leaving the user with a dead player.
+      if (!cancelled) setEngine("sim");
+    });
 
     return () => {
       cancelled = true;
@@ -420,6 +444,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       toggleAutoplay,
       notice,
       dismissNotice,
+      notify: flash,
       isLiked: (id) => state.liked.includes(id),
       isCurrent: (id) => (state.queue[state.order[state.cursor]]?.id ?? null) === id,
     };
@@ -436,6 +461,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     toggleAutoplay,
     notice,
     dismissNotice,
+    flash,
   ]);
 
   return <PlayerContext.Provider value={api}>{children}</PlayerContext.Provider>;

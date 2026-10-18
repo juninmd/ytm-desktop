@@ -30,6 +30,8 @@ pub struct StreamInfo {
     pub expires_in: u64,
     /// The track this stream belongs to, echoed for the caller's bookkeeping.
     pub track_id: String,
+    /// True when `url` is a local file path (asset protocol), not a remote url.
+    pub local: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,6 +98,15 @@ fn find_ytdlp() -> Option<PathBuf> {
 /// Remembers the located binary, so the probe runs once.
 static RESOLVED: OnceLock<PathBuf> = OnceLock::new();
 
+/// YouTube video ids are exactly 11 URL-safe characters. Rejected early so no
+/// other shape can reach a `watch?v=` url.
+pub(crate) fn valid_video_id(id: &str) -> bool {
+    id.len() == 11
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
 /// Where the browser-cookie import looks for `yt-dlp` (shared with the
 /// resolver, since it is the same binary).
 pub(crate) fn yt_dlp() -> Option<PathBuf> {
@@ -128,22 +139,56 @@ pub fn music_resolver_status() -> ResolverStatus {
 ///
 /// `async` (via `async_runtime`) because it blocks on a `yt-dlp` child process:
 /// a synchronous command would stall the webview's event loop for the length of
-/// the extraction. Resolved urls are cached until they expire, so a replay or a
-/// prefetched next track costs nothing.
+/// the extraction. A downloaded file wins over the network, so offline playback
+/// just works; remote urls are cached until they expire.
 #[tauri::command(async)]
-pub fn music_stream(track_id: String) -> Result<StreamInfo, String> {
-    if let Some(info) = cached(&track_id) {
+pub fn music_stream(app: tauri::AppHandle, track_id: String) -> Result<StreamInfo, String> {
+    if let Some(path) = crate::downloads::local_file(&app, &track_id) {
+        return Ok(local_stream(&path, track_id));
+    }
+    cached_or_resolve(&track_id)
+}
+
+/// The network stream, skipping the download check. Used as the fallback when a
+/// downloaded file cannot be played.
+#[tauri::command(async)]
+pub fn music_remote_stream(track_id: String) -> Result<StreamInfo, String> {
+    cached_or_resolve(&track_id)
+}
+
+fn cached_or_resolve(track_id: &str) -> Result<StreamInfo, String> {
+    if let Some(info) = cached(track_id) {
         return Ok(info);
     }
-    let info = resolve(&track_id)?;
+    let info = resolve(track_id)?;
     remember(&info);
     Ok(info)
+}
+
+fn local_stream(path: &std::path::Path, track_id: String) -> StreamInfo {
+    StreamInfo {
+        url: path.to_string_lossy().into_owned(),
+        ext: path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_string(),
+        // A local file never expires.
+        expires_in: 0,
+        track_id,
+        local: true,
+    }
 }
 
 /// Warms the cache for a track the player is likely to reach next. Errors are
 /// swallowed: a prefetch is an optimisation, never a failure.
 #[tauri::command(async)]
-pub fn music_prefetch(track_id: String) -> bool {
+pub fn music_prefetch(app: tauri::AppHandle, track_id: String) -> bool {
+    if crate::downloads::local_file(&app, &track_id).is_some() {
+        // A downloaded track needs no remote url; if it later fails to play the
+        // player resolves the network stream then, paying one extraction.
+        return true;
+    }
     if cached(&track_id).is_some() {
         return true;
     }
@@ -213,12 +258,17 @@ fn remember(info: &StreamInfo) {
 }
 
 fn resolve(track_id: &str) -> Result<StreamInfo, String> {
+    if !valid_video_id(track_id) {
+        return Err("Identificador de faixa inválido.".to_string());
+    }
+
     let binary = find_ytdlp().ok_or_else(|| {
         "yt-dlp não encontrado, então o áudio real não pode ser resolvido.".to_string()
     })?;
 
     let output = Command::new(&binary)
         .args([
+            "--ignore-config",
             "--no-playlist",
             "--no-warnings",
             "--no-progress",
@@ -257,6 +307,7 @@ fn resolve(track_id: &str) -> Result<StreamInfo, String> {
         ext: ext.trim().to_string(),
         expires_in: URL_LIFETIME_SECONDS,
         track_id: track_id.to_string(),
+        local: false,
     })
 }
 
@@ -289,11 +340,12 @@ mod tests {
         if std::env::var("YTM_LIVE").is_err() {
             return;
         }
-        let info = music_stream("uSFXOBaqiR8".to_string()).expect("yt-dlp resolves audio");
+        let info = music_remote_stream("uSFXOBaqiR8".to_string()).expect("yt-dlp resolves audio");
         assert!(info.url.starts_with("http"));
         assert_eq!(info.track_id, "uSFXOBaqiR8");
         assert!(!info.ext.is_empty());
         assert!(info.url.contains("googlevideo.com"));
+        assert!(!info.local);
     }
 
     // The cache is what makes a prefetched next track free; the pure part is
@@ -307,6 +359,7 @@ mod tests {
             ext: "m4a".to_string(),
             expires_in: URL_LIFETIME_SECONDS,
             track_id: key.to_string(),
+            local: false,
         });
         assert_eq!(cached(key).expect("hit").url, "https://x.googlevideo.com/a");
         music_clear_stream_cache();

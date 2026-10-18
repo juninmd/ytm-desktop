@@ -1,4 +1,4 @@
-import { Compass, Heart, Home, Library, LogOut, Music2, Plus, Search } from "lucide-react";
+import { Compass, Download, Heart, Home, Library, LogOut, Music2, Plus, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCatalog } from "../hooks/useCatalog";
 import { Cover } from "./Cover";
@@ -26,6 +26,7 @@ export function Sidebar({ view, onNavigate, session, onSignOut }: Props) {
     { label: "Início", icon: Home, target: { kind: "home" }, active: view.kind === "home" },
     { label: "Explorar", icon: Compass, target: { kind: "library" }, active: false },
     { label: "Biblioteca", icon: Library, target: { kind: "library" }, active: view.kind === "library" },
+    { label: "Baixados", icon: Download, target: { kind: "downloads" }, active: view.kind === "downloads" },
   ];
 
   return (
