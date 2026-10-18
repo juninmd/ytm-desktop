@@ -207,4 +207,49 @@ describe("playback reducer", () => {
     expect(toggled.autoplay).toBe(false);
     expect(toggled.needsRadio).toBe(false);
   });
+
+  it("restores a saved session paused, at the saved track and position", () => {
+    const state = createInitialState(
+      prefs({
+        session: {
+          queue: [track("a"), track("b"), track("c")],
+          cursor: 1,
+          position: 42,
+          shuffle: true,
+          savedAt: 1,
+        },
+      }),
+    );
+
+    expect(state.queue.map((item) => item.id)).toEqual(["a", "b", "c"]);
+    expect(currentTrack(state)?.id).toBe("b");
+    expect(state.position).toBe(42);
+    expect(state.shuffle).toBe(true);
+    // A launch must never start audio on its own.
+    expect(state.isPlaying).toBe(false);
+  });
+
+  it("clamps a restored cursor and position into range", () => {
+    const state = createInitialState(
+      prefs({
+        session: {
+          queue: [track("a", 100)],
+          cursor: 9,
+          position: 999,
+          shuffle: false,
+          savedAt: 1,
+        },
+      }),
+    );
+    expect(state.cursor).toBe(0);
+    expect(state.position).toBe(100);
+  });
+
+  it("ignores a stored session with no tracks", () => {
+    const state = createInitialState(
+      prefs({ session: { queue: [], cursor: 0, position: 5, shuffle: false, savedAt: 1 } }),
+    );
+    expect(state.queue).toEqual([]);
+    expect(state.position).toBe(0);
+  });
 });

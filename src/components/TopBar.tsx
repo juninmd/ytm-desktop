@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, ListMusic, Search, X } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { cn } from "../lib/cn";
+import { useI18n } from "../lib/i18n";
 
 type Props = {
   query: string;
@@ -11,13 +12,14 @@ type Props = {
 };
 
 export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue }: Props) {
+  const { t } = useI18n();
   return (
     <header className="flex items-center gap-3 px-4 py-3">
       <div className="flex items-center gap-1">
-        <IconButton label="Voltar" onClick={onBack}>
+        <IconButton label={t("top.back")} onClick={onBack}>
           <ChevronLeft className="size-5" />
         </IconButton>
-        <IconButton label="Avançar" disabled>
+        <IconButton label={t("top.forward")} disabled>
           <ChevronRight className="size-5" />
         </IconButton>
       </div>
@@ -28,8 +30,8 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue 
           type="search"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Músicas, artistas, álbuns ou podcasts"
-          aria-label="Buscar no catálogo"
+          placeholder={t("top.placeholder")}
+          aria-label={t("top.search")}
           className={cn(
             "h-10 w-full rounded-full border border-transparent bg-raised pr-10 pl-10 text-sm",
             "placeholder:text-subtle hover:border-line-strong focus-visible:border-line-strong focus-visible:outline-none",
@@ -37,7 +39,7 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue 
         />
         {query && (
           <IconButton
-            label="Limpar busca"
+            label={t("top.clearSearch")}
             className="absolute top-1/2 right-1 size-8 -translate-y-1/2"
             onClick={() => onQueryChange("")}
           >
@@ -48,10 +50,10 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue 
 
       <div className="ml-auto flex items-center gap-2">
         <span className="hidden items-center gap-2 rounded-full border border-line px-3 py-1.5 text-xs text-muted xl:flex">
-          Modo demonstração
+          {t("top.demo")}
         </span>
         <IconButton
-          label={queueOpen ? "Ocultar fila" : "Mostrar fila"}
+          label={queueOpen ? t("top.hideQueue") : t("top.showQueue")}
           active={queueOpen}
           className="size-9 bg-raised"
           onClick={onToggleQueue}

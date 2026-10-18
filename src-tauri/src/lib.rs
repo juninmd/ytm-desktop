@@ -28,6 +28,7 @@ pub fn run() {
             innertube::music_browse,
             innertube::music_library,
             innertube::music_rate,
+            innertube::set_locale,
             lyrics::music_lyrics,
             stream::music_stream,
             stream::music_remote_stream,

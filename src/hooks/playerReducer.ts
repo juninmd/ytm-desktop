@@ -30,6 +30,14 @@ export type Preferences = {
   repeat: RepeatMode;
   liked: string[];
   autoplay: boolean;
+  /** The previous session, so the player can offer to continue where it stopped. */
+  session?: {
+    queue: Track[];
+    cursor: number;
+    position: number;
+    shuffle: boolean;
+    savedAt: number;
+  };
 };
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -38,6 +46,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   liked: [],
   autoplay: true,
 };
+
+/** How many tracks of a session are kept for the next launch. */
+export const MAX_RESUME_TRACKS = 200;
 
 function identityOrder(length: number): number[] {
   return Array.from({ length }, (_, index) => index);
@@ -54,21 +65,47 @@ function shuffledOrder(length: number, keepAt: number): number[] {
   return [keep, ...order];
 }
 
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
 export function createInitialState(preferences: Preferences = DEFAULT_PREFERENCES): PlayerState {
-  return {
-    queue: [],
-    order: [],
-    cursor: 0,
-    isPlaying: false,
-    position: 0,
+  const base = {
     volume: preferences.volume,
     muted: false,
-    shuffle: false,
     repeat: preferences.repeat,
     liked: preferences.liked,
     playToken: 0,
     needsRadio: false,
     autoplay: preferences.autoplay,
+  };
+
+  const session = preferences.session;
+  if (session && session.queue.length > 0) {
+    const cursor = clamp(Math.round(session.cursor), 0, session.queue.length - 1);
+    const track = session.queue[cursor];
+    const limit = track && track.duration > 0 ? track.duration : Number.POSITIVE_INFINITY;
+    return {
+      ...base,
+      queue: session.queue,
+      order: identityOrder(session.queue.length),
+      cursor,
+      // Resumed paused, so a launch never blasts audio at the user.
+      isPlaying: false,
+      position: clamp(session.position, 0, limit),
+      shuffle: session.shuffle,
+    };
+  }
+
+  return {
+    ...base,
+    queue: [],
+    order: [],
+    cursor: 0,
+    isPlaying: false,
+    position: 0,
+    shuffle: false,
   };
 }
 

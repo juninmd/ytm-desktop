@@ -35,6 +35,8 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 | Autoplay / radio | **Real** — when the queue ends, the track's radio continues it (toggleable in the queue) |
 | Stream cache | Resolved urls are cached until they expire; the next track is prefetched |
 | Offline downloads | **Real** — a track is saved to disk with `yt-dlp` and played from the file (asset protocol), so it works without a network |
+| Session | The queue, current track and playhead are restored **paused** on the next launch |
+| Language | The whole interface is bilingual (pt-BR / English), and the switch also changes the catalogue's data language (`hl`) |
 | Sign-in | **Real** OAuth 2.0 device flow in Rust against Google; sign-out revokes the grant |
 | Personal library (playlists, liked songs, saved albums) | **Real**, once the browser cookie is connected — InnerTube needs `Cookie` + `SAPISIDHASH`, not a bearer token |
 | Liking a track | **Real** — writes through to the account when the library is connected (optimistic, with rollback); local-only otherwise |
@@ -151,6 +153,7 @@ src/
   lib/auth.ts              Tauri IPC boundary + browser fallback
   lib/music.ts             catalogue/stream/rate IPC boundary + browser fallback
   lib/catalog.ts           pure catalogue merge (unit-tested)
+  lib/i18n.tsx             bilingual interface (pt-BR / English)
   lib/cover.ts             deterministic artwork from a hash
   components/              Sidebar, TopBar, HomeView, CollectionView,
                            TrackTable, PlayerBar, QueuePanel, SignInScreen,

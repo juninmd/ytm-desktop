@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, Cookie, Loader2, TriangleAlert } from "lucide-react";
 import { useCatalog } from "../hooks/useCatalog";
 import { cn } from "../lib/cn";
+import { useI18n } from "../lib/i18n";
 
 /**
  * The seam between the two YouTube Music auth schemes.
@@ -14,6 +15,7 @@ import { cn } from "../lib/cn";
  */
 export function LibraryCookieForm() {
   const { saveCookies, clearCookies, importCookies, browsers, libraryAvailable } = useCatalog();
+  const { t } = useI18n();
   const [value, setValue] = useState("");
   const [browser, setBrowser] = useState("chrome");
   const [state, setState] = useState<"idle" | "saving" | "error" | "done">("idle");
@@ -41,7 +43,7 @@ export function LibraryCookieForm() {
     try {
       const outcome = await importCookies(browser);
       setState("done");
-      setError(`Cookies lidos do ${outcome.browser} (${outcome.fields.length}).`);
+      setError(t("cookie.read", { browser: outcome.browser, count: outcome.fields.length }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setState("error");
@@ -54,23 +56,15 @@ export function LibraryCookieForm() {
     <div className="mt-6 max-w-[62ch] rounded-lg border border-line bg-panel p-5">
       <div className="flex items-center gap-2.5">
         <Cookie className="size-4 text-accent" />
-        <h2 className="text-sm font-semibold">Conectar a biblioteca do YouTube Music</h2>
+        <h2 className="text-sm font-semibold">{t("cookie.title")}</h2>
       </div>
 
-      <p className="mt-2 text-sm text-muted">
-        A busca e o catálogo já funcionam. Para ver as suas playlists, curtidas e álbuns salvos, a
-        API privada do YouTube Music exige o <code className="text-fg/90">Cookie</code> do navegador
-        — ela não aceita o token do login.
-      </p>
+      <p className="mt-2 text-sm text-muted">{t("cookie.intro")}</p>
 
       {browsers.length > 0 && (
         <div className="mt-4 rounded-md border border-line bg-canvas/60 p-3">
-          <p className="text-xs font-medium text-fg/90">Ler direto do navegador</p>
-          <p className="mt-1 text-xs text-subtle">
-            Usa o <code>yt-dlp</code> para ler os cookies de uma sessão já autenticada. No
-            Chrome/Edge, feche o navegador antes — ele trava o banco de cookies enquanto está
-            aberto; o Firefox lê direto.
-          </p>
+          <p className="text-xs font-medium text-fg/90">{t("cookie.browserHeading")}</p>
+          <p className="mt-1 text-xs text-subtle">{t("cookie.browserHint")}</p>
           <div className="mt-2.5 flex items-center gap-2">
             <select
               value={browser}
@@ -90,14 +84,14 @@ export function LibraryCookieForm() {
               className="flex items-center gap-2 rounded-full border border-line px-4 py-2 text-sm font-medium text-fg transition-colors hover:border-line-strong disabled:opacity-40"
             >
               {importing && <Loader2 className="size-4 animate-spin" />}
-              Ler do navegador
+              {t("cookie.readFromBrowser")}
             </button>
           </div>
         </div>
       )}
 
       <details className="mt-4" open={browsers.length === 0}>
-        <summary className="cursor-pointer text-xs text-muted">Ou cole o cookie manualmente</summary>
+        <summary className="cursor-pointer text-xs text-muted">{t("cookie.manual")}</summary>
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -106,10 +100,7 @@ export function LibraryCookieForm() {
           placeholder="VISITOR_INFO1_LIVE=…; SAPISID=…; __Secure-3PAPISID=…"
           className="mt-3 w-full resize-y rounded-md border border-line bg-canvas px-3 py-2 font-mono text-xs text-fg outline-none placeholder:text-subtle focus-visible:border-line-strong"
         />
-        <p className="mt-2 text-xs text-subtle">
-          Copie o cabeçalho <code>Cookie</code> de qualquer requisição a{" "}
-          <code>music.youtube.com</code> em uma aba autenticada.
-        </p>
+        <p className="mt-2 text-xs text-subtle">{t("cookie.manualHint")}</p>
       </details>
 
       {error && (
@@ -140,7 +131,7 @@ export function LibraryCookieForm() {
           ) : state === "done" ? (
             <Check className="size-4" />
           ) : null}
-          {state === "done" ? "Conectado" : "Salvar cookie"}
+          {state === "done" ? t("cookie.connected") : t("cookie.save")}
         </button>
 
         {libraryAvailable && (
@@ -149,15 +140,12 @@ export function LibraryCookieForm() {
             onClick={() => void clearCookies()}
             className="rounded-full px-4 py-2 text-sm text-muted transition-colors hover:text-fg"
           >
-            Desconectar
+            {t("cookie.disconnect")}
           </button>
         )}
       </div>
 
-      <p className="mt-3 text-xs text-subtle">
-        O valor fica no cofre do sistema operacional, nunca no <code>localStorage</code>. No
-        Chrome/Edge, feche o navegador para a leitura automática; o Firefox funciona com ele aberto.
-      </p>
+      <p className="mt-3 text-xs text-subtle">{t("cookie.footnote")}</p>
     </div>
   );
 }

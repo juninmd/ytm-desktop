@@ -3,6 +3,7 @@ import type { Collection } from "../types";
 import { Cover } from "./Cover";
 import { usePlayCollection } from "../hooks/usePlayCollection";
 import { cn } from "../lib/cn";
+import { useI18n } from "../lib/i18n";
 
 type Props = {
   collection: Collection;
@@ -17,6 +18,7 @@ type Props = {
  */
 export function CollectionCard({ collection, onOpen, className }: Props) {
   const playCollection = usePlayCollection();
+  const { t } = useI18n();
 
   return (
     <article
@@ -32,7 +34,7 @@ export function CollectionCard({ collection, onOpen, className }: Props) {
         <button
           type="button"
           onClick={() => void playCollection(collection)}
-          aria-label={`Tocar ${collection.title}`}
+          aria-label={t("nav.play", { title: collection.title })}
           className="bg-accent hover:bg-accent-strong absolute right-2 bottom-2 z-20 grid size-10 translate-y-1 place-items-center rounded-full text-white opacity-0 shadow-[0_10px_24px_rgb(0_0_0/0.6)] transition duration-200 group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100"
         >
           <Play className="size-4 fill-current" />
@@ -40,7 +42,7 @@ export function CollectionCard({ collection, onOpen, className }: Props) {
       </div>
       <button
         type="button"
-        aria-label={`Abrir ${collection.title}`}
+        aria-label={t("nav.open", { title: collection.title })}
         onClick={() => onOpen(collection)}
         className="absolute inset-0 z-10 rounded-lg"
       />

@@ -16,6 +16,7 @@ import { Logo } from "./components/ui/Logo";
 import { CatalogProvider, useCatalog } from "./hooks/useCatalog";
 import { useAuth } from "./hooks/useAuth";
 import { PlayerProvider, usePlayer } from "./hooks/usePlayer";
+import { I18nProvider, useI18n } from "./lib/i18n";
 import { fetchRadio } from "./lib/music";
 import type { Collection, View } from "./types";
 
@@ -36,20 +37,23 @@ function STUB_COLLECTION(
 
 export default function App() {
   return (
-    <PlayerProvider>
-      <Shell />
-    </PlayerProvider>
+    <I18nProvider>
+      <PlayerProvider>
+        <Shell />
+      </PlayerProvider>
+    </I18nProvider>
   );
 }
 
 function Shell() {
   const auth = useAuth();
+  const { t } = useI18n();
 
   if (auth.status === "restoring") {
     return (
       <div className="grid h-full place-items-center">
         <Logo className="size-10 animate-pulse" />
-        <span className="sr-only">Carregando o player</span>
+        <span className="sr-only">{t("app.loading")}</span>
       </div>
     );
   }
@@ -72,6 +76,7 @@ function Workspace({
 }) {
   const player = usePlayer();
   const { getCollection, likedTrackIds } = useCatalog();
+  const { t } = useI18n();
   const { syncLiked, notice, dismissNotice } = player;
   const [view, setView] = useState<View>({ kind: "home" });
   const [history, setHistory] = useState<View[]>([]);
@@ -231,11 +236,7 @@ function Workspace({
             <div className="flex items-start gap-2.5 border-b border-line bg-accent/8 px-4 py-2.5 text-xs">
               <TriangleAlert className="mt-px size-4 shrink-0 text-accent" />
               <p className="text-fg/85">
-                <span className="font-medium">Áudio real indisponível:</span> o{" "}
-                <code className="text-fg">yt-dlp</code> não foi encontrado, então o transporte está
-                simulado (sem som). Instale-o com{" "}
-                <code className="text-fg">winget install yt-dlp.yt-dlp</code> e reabra o app para
-                tocar de verdade.
+                <span className="font-medium">{t("app.noAudio")}</span> {t("app.noAudioBody")}
               </p>
             </div>
           )}
@@ -254,7 +255,9 @@ function Workspace({
       />
 
       <div className="sr-only" aria-live="polite">
-        {player.current ? `Tocando ${player.current.title}, de ${player.current.artist}` : ""}
+        {player.current
+          ? t("app.playing", { title: player.current.title, artist: player.current.artist })
+          : ""}
       </div>
 
       {notice && (
@@ -265,7 +268,7 @@ function Workspace({
             <button
               type="button"
               onClick={dismissNotice}
-              aria-label="Fechar aviso"
+              aria-label={t("app.dismiss")}
               className="text-subtle transition-colors hover:text-fg"
             >
               ✕

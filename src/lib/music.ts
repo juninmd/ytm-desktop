@@ -188,6 +188,11 @@ export async function deleteDownload(trackId: string): Promise<void> {
   if (isDesktop()) await invoke("music_delete_download", { trackId });
 }
 
+/** Tells the backend which `hl` to use for catalogue requests. */
+export async function setDataLocale(locale: "pt" | "en"): Promise<void> {
+  if (isDesktop()) await invoke("set_locale", { locale });
+}
+
 /** Whether the desktop backend can actually resolve real audio (yt-dlp). */
 export async function resolverStatus(): Promise<ResolverStatus> {
   if (isDesktop()) return invoke<ResolverStatus>("music_resolver_status");

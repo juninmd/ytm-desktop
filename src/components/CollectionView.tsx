@@ -9,15 +9,16 @@ import { usePlayCollection } from "../hooks/usePlayCollection";
 import { usePlayer } from "../hooks/usePlayer";
 import { heroStyle } from "../lib/cover";
 import { cn } from "../lib/cn";
-import { formatRuntime, pluralize } from "../lib/format";
+import { formatRuntime } from "../lib/format";
+import { useI18n, type MessageKey } from "../lib/i18n";
 import type { Collection } from "../types";
 
-const FORMAT_LABEL: Record<Collection["format"], string> = {
-  album: "Álbum",
-  ep: "EP",
-  single: "Single",
-  playlist: "Playlist",
-  artist: "Artista",
+const FORMAT_LABEL: Record<Collection["format"], MessageKey> = {
+  album: "format.album",
+  ep: "format.ep",
+  single: "format.single",
+  playlist: "format.playlist",
+  artist: "format.artist",
 };
 
 export function CollectionView({
@@ -38,6 +39,7 @@ export function CollectionView({
     downloadMany,
   } = useCatalog();
   const { state, toggleShuffle, isLiked, toggleLike, notify } = usePlayer();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -86,14 +88,14 @@ export function CollectionView({
     if (!failed) return null;
     return (
       <div className="grid place-items-center px-6 py-24 text-center">
-        <p className="text-lg font-semibold">Não foi possível abrir esta coleção</p>
-        <p className="mt-1 text-sm text-muted">Verifique a conexão e tente de novo.</p>
+        <p className="text-lg font-semibold">{t("collection.loadingFailed")}</p>
+        <p className="mt-1 text-sm text-muted">{t("collection.loadingFailedHint")}</p>
         <button
           type="button"
           onClick={retry}
           className="mt-5 rounded-full border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
         >
-          Tentar de novo
+          {t("common.retry")}
         </button>
       </div>
     );
@@ -118,7 +120,7 @@ export function CollectionView({
           />
           <div className="min-w-0 pb-1">
             <p className="text-xs font-semibold tracking-wide text-fg/80 uppercase">
-              {FORMAT_LABEL[collection.format]}
+              {t(FORMAT_LABEL[collection.format])}
             </p>
             <h1 className="mt-2 text-5xl leading-[1.05] font-black tracking-tight break-words">
               {collection.title}
@@ -131,7 +133,7 @@ export function CollectionView({
               {collection.year && <Dot />}
               {collection.year && <span>{collection.year}</span>}
               <Dot />
-              <span>{pluralize(tracks.length, "faixa")}</span>
+              <span>{t(tracks.length === 1 ? "common.track" : "common.tracks", { count: tracks.length })}</span>
               {tracks.length > 0 && (
                 <>
                   <Dot />
@@ -150,16 +152,16 @@ export function CollectionView({
         <button
           type="button"
           onClick={() => void playCollection(collection)}
-          aria-label={`Tocar ${collection.title}`}
+          aria-label={t("collection.play", { title: collection.title })}
           className="bg-accent hover:bg-accent-strong grid size-14 place-items-center rounded-full text-white shadow-[0_10px_30px_rgb(255_61_90/0.35)] transition hover:scale-[1.04] active:scale-100"
         >
           <Play className="size-6 translate-x-px fill-current" />
         </button>
-        <IconButton label="Embaralhar" active={state.shuffle} onClick={toggleShuffle} className="size-9">
+        <IconButton label={t("collection.shuffle")} active={state.shuffle} onClick={toggleShuffle} className="size-9">
           <Shuffle className="size-6" />
         </IconButton>
         <IconButton
-          label={leadLiked ? "Remover das curtidas" : "Curtir coleção"}
+          label={leadLiked ? t("collection.unlike") : t("collection.like")}
           onClick={() => lead && toggleLike(lead.id)}
           disabled={!lead}
           className={cn("size-9", leadLiked && "text-accent")}
@@ -167,7 +169,7 @@ export function CollectionView({
           <Heart className={cn("size-6", leadLiked && "fill-accent")} />
         </IconButton>
         <IconButton
-          label={saving ? "Baixando coleção" : "Baixar coleção"}
+          label={saving ? t("collection.downloading") : t("collection.download")}
           className="size-9"
           disabled={saving || tracks.length === 0}
           onClick={() => {
@@ -182,7 +184,7 @@ export function CollectionView({
               })),
             )
               .then((failed) => {
-                if (failed > 0) notify(`${failed} faixa(s) não puderam ser baixadas.`);
+                if (failed > 0) notify(t(failed === 1 ? "collection.downloadFailedOne" : "collection.downloadFailed", { count: failed }));
               })
               .finally(() => setSaving(false));
           }}
@@ -198,16 +200,16 @@ export function CollectionView({
           </div>
         ) : failed && tracks.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-muted">
-            Não foi possível carregar as faixas.{" "}
+            {t("collection.tracksFailed")}{" "}
             <button type="button" onClick={retry} className="underline hover:text-fg">
-              Tentar de novo
+              {t("common.retry")}
             </button>
           </p>
         ) : (
           <TrackTable
             tracks={tracks}
             showAlbum={collection.kind !== "album"}
-            emptyLabel="Esta coleção ainda não tem faixas."
+            emptyLabel={t("collection.empty")}
           />
         )}
       </div>
@@ -226,7 +228,7 @@ export function CollectionView({
             className="flex items-center gap-2 rounded-full border border-line px-5 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg disabled:opacity-40"
           >
             {loadingMore && <Loader2 className="size-4 animate-spin" />}
-            Carregar mais
+            {t("search.loadMore")}
           </button>
         </div>
       )}

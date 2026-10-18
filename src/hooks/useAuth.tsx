@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useI18n } from "../lib/i18n";
 import {
   beginDeviceFlow,
   demoSession,
@@ -35,6 +36,11 @@ export function useAuth(): AuthApi {
   const [deviceCode, setDeviceCode] = useState<DeviceCode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
+
+  // Read through a ref so the polling effect never restarts on a language change.
+  const { t } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
 
   /** Increments on every `cancel()` so in-flight polls can tell they are stale. */
   const generation = useRef(0);
@@ -76,12 +82,12 @@ export function useAuth(): AuthApi {
             return;
           }
           if (result.status === "denied") {
-            setError("Autorização recusada nesta conta.");
+            setError(tRef.current("auth.denied"));
             setStatus("error");
             return;
           }
           if (result.status === "expired") {
-            setError("O código expirou. Gere um novo para continuar.");
+            setError(tRef.current("auth.expired"));
             setStatus("error");
             return;
           }
@@ -106,7 +112,7 @@ export function useAuth(): AuthApi {
       setSecondsLeft((left) => {
         if (left <= 1) {
           window.clearInterval(timer);
-          setError("O código expirou. Gere um novo para continuar.");
+          setError(tRef.current("auth.expired"));
           setStatus("error");
           return 0;
         }

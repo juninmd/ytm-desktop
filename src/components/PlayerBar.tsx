@@ -19,6 +19,7 @@ import { Slider } from "./ui/Slider";
 import { usePlayer } from "../hooks/usePlayer";
 import { cn } from "../lib/cn";
 import { formatTime } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 type Props = {
   queueOpen: boolean;
@@ -43,6 +44,7 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
     isLiked,
     toggleLike,
   } = usePlayer();
+  const { t } = useI18n();
 
   const liked = current ? isLiked(current.id) : false;
   const VolumeIcon = state.muted || state.volume === 0 ? VolumeX : state.volume < 0.5 ? Volume1 : Volume2;
@@ -71,14 +73,14 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
               )}
               title={
                 engine === "audio"
-                  ? "Reproduzindo áudio real resolvido pelo yt-dlp"
-                  : "Transporte simulado: nenhum áudio real está tocando"
+                  ? t("player.engineRealTitle")
+                  : t("player.engineSimTitle")
               }
             >
-              {engine === "audio" ? "áudio real" : "simulado"}
+              {engine === "audio" ? t("player.engineReal") : t("player.engineSim")}
             </span>
             <IconButton
-              label={liked ? "Remover das curtidas" : "Curtir"}
+              label={liked ? t("player.unlike") : t("player.like")}
               onClick={() => toggleLike(current.id)}
               className={cn("ml-1", liked && "text-accent hover:text-accent")}
             >
@@ -89,8 +91,8 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
           <>
             <span className="size-14 shrink-0 rounded-md border border-line bg-raised" />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-muted">Nenhuma faixa selecionada</p>
-              <p className="text-xs text-subtle">Escolha algo na sua biblioteca</p>
+              <p className="text-sm font-medium text-muted">{t("player.nothing")}</p>
+              <p className="text-xs text-subtle">{t("player.nothingHint")}</p>
             </div>
           </>
         )}
@@ -98,17 +100,17 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
 
       <div className="flex w-full max-w-[640px] flex-col items-center gap-1.5">
         <div className="flex items-center gap-3">
-          <IconButton label="Embaralhar" active={state.shuffle} onClick={toggleShuffle}>
+          <IconButton label={t("player.shuffle")} active={state.shuffle} onClick={toggleShuffle}>
             <Shuffle className="size-4" />
           </IconButton>
-          <IconButton label="Faixa anterior" onClick={previous} disabled={!current}>
+          <IconButton label={t("player.previous")} onClick={previous} disabled={!current}>
             <SkipBack className="size-5 fill-current" />
           </IconButton>
           <button
             type="button"
             onClick={toggle}
             disabled={!current}
-            aria-label={state.isPlaying ? "Pausar" : "Tocar"}
+            aria-label={state.isPlaying ? t("player.pause") : t("player.play")}
             className="grid size-9 place-items-center rounded-full bg-white text-canvas transition hover:scale-105 active:scale-100 disabled:pointer-events-none disabled:opacity-40"
           >
             {state.isPlaying ? (
@@ -117,11 +119,11 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
               <Play className="size-4 translate-x-px fill-current" />
             )}
           </button>
-          <IconButton label="Próxima faixa" onClick={next} disabled={!current}>
+          <IconButton label={t("player.next")} onClick={next} disabled={!current}>
             <SkipForward className="size-5 fill-current" />
           </IconButton>
           <IconButton
-            label={state.repeat === "one" ? "Repetir: uma faixa" : state.repeat === "all" ? "Repetir: tudo" : "Repetir: desligado"}
+            label={state.repeat === "one" ? t("player.repeatOne") : state.repeat === "all" ? t("player.repeatAll") : t("player.repeatOff")}
             active={state.repeat !== "off"}
             onClick={cycleRepeat}
           >
@@ -134,7 +136,7 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
             {formatTime(state.position)}
           </span>
           <Slider
-            label="Posição da faixa"
+            label={t("player.position")}
             value={state.position}
             max={current && current.duration > 0 ? current.duration : 1}
             onChange={seek}
@@ -148,7 +150,7 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
 
       <div className="flex flex-1 items-center justify-end gap-1">
         <IconButton
-          label={lyricsOpen ? "Ocultar letra" : "Mostrar letra"}
+          label={lyricsOpen ? t("player.hideLyrics") : t("player.showLyrics")}
           active={lyricsOpen}
           onClick={onToggleLyrics}
           disabled={!current}
@@ -156,17 +158,17 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
           <Mic2 className="size-4" />
         </IconButton>
         <IconButton
-          label={queueOpen ? "Ocultar fila" : "Mostrar fila"}
+          label={queueOpen ? t("player.hideQueue") : t("player.showQueue")}
           active={queueOpen}
           onClick={onToggleQueue}
         >
           <ListMusic className="size-4" />
         </IconButton>
-        <IconButton label={state.muted ? "Ativar som" : "Silenciar"} onClick={toggleMute}>
+        <IconButton label={state.muted ? t("player.unmute") : t("player.mute")} onClick={toggleMute}>
           <VolumeIcon className="size-4" />
         </IconButton>
         <Slider
-          label="Volume"
+          label={t("player.volume")}
           className="max-w-[110px]"
           value={state.muted ? 0 : state.volume}
           max={1}

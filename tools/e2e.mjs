@@ -273,6 +273,21 @@ await page.waitForSelector("text=Baixados");
 check("downloads view lists the saved track", (await page.locator("text=Faixa do Backend").count()) > 0);
 await shot("16-desktop-downloads");
 
+// 9. The session is persisted for the next launch.
+const stored = await page.evaluate(() => localStorage.getItem("ytm-desktop:preferences"));
+const session = stored ? JSON.parse(stored).session : null;
+check(
+  "the session (queue + position) is persisted",
+  Boolean(session) && session.queue.length > 0,
+);
+
+// 10. Switching the language changes the chrome.
+await page.selectOption("#locale", "en");
+await page.waitForSelector("text=Home");
+check("switching to English translates the chrome", (await page.locator("text=Downloads").count()) > 0);
+await page.selectOption("#locale", "pt");
+await page.waitForSelector("text=Início");
+
 await browser.close();
 
 if (consoleErrors.length > 0) {
