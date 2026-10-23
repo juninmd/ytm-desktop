@@ -1,15 +1,27 @@
+<div align="center">
+
+<img src=".github/assets/icon.svg" alt="" width="96" height="96" />
+
 # YTM Desktop
+
+**Cliente desktop de YouTube Music para quem já vive no modelo do Spotify.**<br/>
+Tauri 2 + React 19: catálogo e áudio reais no app; no navegador, um catálogo simulado para revisão offline.
 
 [![CI](https://github.com/juninmd/ytm-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/juninmd/ytm-desktop/actions/workflows/ci.yml)
 [![Security Scan](https://github.com/juninmd/ytm-desktop/actions/workflows/security.yml/badge.svg)](https://github.com/juninmd/ytm-desktop/actions/workflows/security.yml)
+[![License](https://img.shields.io/github/license/juninmd/ytm-desktop)](LICENSE)
+
+<br/>
+
+<img src=".github/assets/screenshots/home.png" alt="Tela principal em modo demonstração: barra lateral com a biblioteca, carrosséis de álbuns e playlists e barra de reprodução na base" width="860" />
+
+</div>
 
 Cliente desktop de YouTube Music (protótipo) em **Tauri 2 + React 19 + Tailwind 4**, para quem já tem
 no dedo o modelo de interação do Spotify: shell denso de três painéis, player com fila, busca,
 biblioteca e letras. No app desktop, o catálogo e o áudio são reais (InnerTube + `yt-dlp`, ambos
 implementados em Rust); no navegador, a interface cai para um catálogo simulado embutido, para ser
 revisada offline e sem credenciais.
-
-![Login](docs/screenshots/01-signin.png)
 
 ## Índice
 
@@ -29,6 +41,10 @@ revisada offline e sem credenciais.
 - [Notas de design](#notas-de-design)
 - [Acessibilidade](#acessibilidade)
 - [Advisories conhecidos](#advisories-conhecidos)
+- [Segurança](#segurança)
+- [Limitações conhecidas](#limitações-conhecidas)
+- [Documentação](#documentação)
+- [Contribuição](#contribuição)
 - [Licença](#licença)
 
 ## Funcionalidades
@@ -187,9 +203,9 @@ Saída do passo `npm run build` (verificada), seguida do bundle do Tauri:
 
 ```text
 dist/index.html                   0.52 kB │ gzip:  0.32 kB
-dist/assets/index-XYlalD9U.css   34.06 kB │ gzip:  7.40 kB
-dist/assets/index-DL7Zw4iV.js   331.46 kB │ gzip: 99.27 kB
-✓ built in 710ms
+dist/assets/index-B73SWWtQ.css   33.77 kB │ gzip:  7.35 kB
+dist/assets/index-DQ5WQ64e.js   331.46 kB │ gzip: 99.27 kB
+✓ built in 816ms
 ```
 
 **4. Testes unitários:**
@@ -299,9 +315,12 @@ Preview no navegador (catálogo simulado):
 
 | | |
 |---|---|
-| ![Home](docs/screenshots/03-home.png) | ![Tocando e fila](docs/screenshots/04-playing-queue.png) |
-| ![Álbum](docs/screenshots/05-album.png) | ![Biblioteca](docs/screenshots/06-library.png) |
-| ![Código do dispositivo](docs/screenshots/02-device-code.png) | ![Busca](docs/screenshots/07-search.png) |
+| ![Login](docs/screenshots/01-signin.png)<br/>**Login** · entrada com Google ou modo demonstração | ![Código do dispositivo](docs/screenshots/02-device-code.png)<br/>**Código do dispositivo** · fluxo de login no preview |
+| ![Home](docs/screenshots/03-home.png)<br/>**Início** · carrosséis de álbuns e playlists | ![Tocando e fila](docs/screenshots/04-playing-queue.png)<br/>**Tocando e fila** · faixa atual e próximas |
+| ![Álbum](docs/screenshots/05-album.png)<br/>**Álbum** · página de álbum | ![Biblioteca](docs/screenshots/06-library.png)<br/>**Biblioteca** · coleção do usuário |
+| ![Busca](docs/screenshots/07-search.png)<br/>**Busca** · resultados por aba | |
+
+<sub>Capturas do preview no navegador, com catálogo simulado. A janela nativa abaixo é a exceção: é uma captura do binário Tauri em execução.</sub>
 
 A mesma interface dentro da janela Tauri real no Windows, não em uma aba de navegador:
 
@@ -346,6 +365,39 @@ O Dependabot reporta um advisory moderado no lockfile, aceito em vez de ignorado
 A dependência é **só de Linux**: `glib`, `gtk` e `atk` não são compilados para
 `x86_64-pc-windows-msvc` nem para alvos Apple, então os binários de Windows e macOS não contêm o
 código afetado. Revisitar quando o backend Linux do Tauri migrar para gtk-rs 0.20+.
+
+## Segurança
+
+- Tokens e cookies são guardados só pelo Rust, só no cofre do SO (`keyring`); nunca entram no `localStorage`.
+- O refresh token nunca entra no webview.
+- Segredos OAuth vêm de variáveis de ambiente e não são commitados.
+- A CSP de `src-tauri/tauri.conf.json` e o escopo do `assetProtocol` não são afrouxados (regra em [AGENTS.md](AGENTS.md)).
+- Modelo de ameaças e fluxo completo em [docs/authentication.md](docs/authentication.md).
+
+## Limitações conhecidas
+
+> [!NOTE]
+> O login real exige um cliente OAuth do tipo *TVs and Limited Input devices* seu, em `YTM_GOOGLE_CLIENT_ID` e `YTM_GOOGLE_CLIENT_SECRET`. Sem eles, a tela de login informa o que falta.
+
+- O preview do navegador usa catálogo e transporte simulados; nenhum dado real chega a ele.
+- Catálogo, busca e áudio dependem da API InnerTube do YouTube Music e do `yt-dlp`. Nenhuma das duas é uma API pública estável: mudanças do lado do YouTube podem quebrar a extração.
+- A biblioteca pessoal depende do header `Cookie` de uma aba autenticada, colado à mão. Ele deixa de funcionar quando a sessão do navegador expira.
+- Sem `yt-dlp` no `PATH`, o player cai para o transporte simulado e rotula isso na barra de reprodução.
+- Letras: ao abrir o painel, artista, título e álbum são enviados ao LRCLIB. Com o painel fechado, nada é enviado.
+- O advisory do `glib` no Linux está aceito; ver [Advisories conhecidos](#advisories-conhecidos).
+- Os testes Rust que tocam serviços reais são opt-in (`YTM_LIVE=1`) e não rodam no CI.
+
+## Documentação
+
+| Documento | O que tem |
+|---|---|
+| 🔐 [Autenticação](docs/authentication.md) | Device Flow implementado, modelo de ameaças do armazenamento, configuração e preview do navegador (em inglês) |
+
+## Contribuição
+
+- README e documentação em pt-BR; código, identificadores e commits em inglês.
+- Regras para agentes, fronteiras e gates de CI estão em [AGENTS.md](AGENTS.md).
+- Antes de abrir PR, rode `npm run build`, `npm test` e os comandos `cargo` de [Testes, lint e build](#testes-lint-e-build).
 
 ## Licença
 
