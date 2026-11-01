@@ -39,7 +39,7 @@ export function PlaybackOptions() {
         title={t("speed.button", { rate: state.rate })}
         aria-haspopup="menu"
         onClick={(event) =>
-          menu.show(
+          menu.toggle(
             t("speed.title"),
             [
               { id: "heading", heading: t("speed.title") },
@@ -75,7 +75,7 @@ export function PlaybackOptions() {
         aria-haspopup="menu"
         aria-pressed={sleep !== null}
         onClick={(event) =>
-          menu.show(
+          menu.toggle(
             t("sleep.title"),
             [
               { id: "heading", heading: t("sleep.title") },

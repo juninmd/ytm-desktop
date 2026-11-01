@@ -26,6 +26,22 @@ describe("keyboard shortcuts", () => {
     expect(resolveShortcut(press("k", { ctrlKey: true }), body)).toBe("search");
   });
 
+  it("toggles mini mode with Ctrl+Shift+M only", () => {
+    expect(resolveShortcut(press("M", { ctrlKey: true, shiftKey: true }), body)).toBe("mini");
+    expect(resolveShortcut(press("m", { ctrlKey: true }), body)).toBeNull();
+    expect(resolveShortcut(press("m"), body)).toBe("mute");
+  });
+
+  it("accepts the alternative chords for queue, like and search", () => {
+    const chord = { altKey: true, shiftKey: true };
+    expect(resolveShortcut(press("Q", chord), body)).toBe("queue");
+    expect(resolveShortcut(press("B", chord), body)).toBe("like");
+    expect(resolveShortcut(press("l", { ctrlKey: true }), body)).toBe("search");
+    // Alt alone, or Alt+Shift on another key, stays with the OS.
+    expect(resolveShortcut(press("q", { altKey: true }), body)).toBeNull();
+    expect(resolveShortcut(press("x", chord), body)).toBeNull();
+  });
+
   it("leaves browser and OS chords alone", () => {
     expect(resolveShortcut(press("r", { ctrlKey: true }), body)).toBeNull();
     expect(resolveShortcut(press("s", { metaKey: true }), body)).toBeNull();
@@ -65,6 +81,7 @@ describe("keyboard shortcuts", () => {
         resolveShortcut(press(key), body),
       ),
     );
+    reachable.add(resolveShortcut(press("M", { ctrlKey: true, shiftKey: true }), body));
     for (const command of commands) expect(reachable.has(command)).toBe(true);
   });
 });

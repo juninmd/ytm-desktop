@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Keyboard, ListMusic, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Keyboard, ListMusic, PictureInPicture2, Search, X } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { cn } from "../lib/cn";
 import { useI18n } from "../lib/i18n";
@@ -10,9 +10,10 @@ type Props = {
   queueOpen: boolean;
   onToggleQueue: () => void;
   onOpenShortcuts: () => void;
+  onOpenMini: () => void;
 };
 
-export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue, onOpenShortcuts }: Props) {
+export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue, onOpenShortcuts, onOpenMini }: Props) {
   const { t } = useI18n();
   return (
     <header className="flex items-center gap-3 px-4 py-3">
@@ -54,6 +55,9 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue,
         <span className="hidden items-center gap-2 rounded-full border border-line px-3 py-1.5 text-xs text-muted xl:flex">
           {t("top.demo")}
         </span>
+        <IconButton label={t("mini.enter")} className="size-9 bg-raised" onClick={onOpenMini}>
+          <PictureInPicture2 className="size-4" />
+        </IconButton>
         <IconButton
           label={t("keys.open")}
           className="size-9 bg-raised"

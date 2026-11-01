@@ -1,8 +1,10 @@
-import { ArrowDown, ArrowUp, Ellipsis, Heart, ListX, Play, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Disc3, Ellipsis, GripVertical, Heart, ListX, Play, Trash2, UserRound, X } from "lucide-react";
 import { Cover } from "./Cover";
 import { IconButton } from "./ui/IconButton";
 import { anchorFromElement, anchorFromEvent, type MenuAnchor } from "./ui/Menu";
 import { useMenu } from "./ui/useMenu";
+import { useDragReorder } from "../hooks/useDragReorder";
+import { useNavigation } from "../hooks/useNavigation";
 import { usePlayer } from "../hooks/usePlayer";
 import { useI18n } from "../lib/i18n";
 import { cn } from "../lib/cn";
@@ -23,18 +25,28 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
   } = usePlayer();
   const { t } = useI18n();
   const menu = useMenu();
+  const navigation = useNavigation();
+  const reorder = useDragReorder(
+    (from, to) => moveQueued(state.cursor + 1 + from, state.cursor + 1 + to),
+  );
 
   // Upcoming entries are addressed by their position in play order.
   const positionOf = (index: number) => state.cursor + 1 + index;
 
-  const openMenu = (track: Track, index: number | null, anchor: MenuAnchor) => {
+  const openMenu = (track: Track, index: number | null, anchor: MenuAnchor, owner = false) => {
     const liked = isLiked(track.id);
     const position = index === null ? state.cursor : positionOf(index);
     const last = index !== null && index === upNext.length - 1;
-    menu.show(
+    (owner ? menu.toggle : menu.show)(
       t("queue.more", { title: track.title }),
       [
         { id: "play", label: t("menu.playNow"), icon: <Play className="size-4" />, onSelect: () => jump(position) },
+        ...(navigation && track.albumId
+          ? [{ id: "album", label: t("menu.goAlbum"), icon: <Disc3 className="size-4" />, onSelect: () => navigation.openAlbum(track.albumId) }]
+          : []),
+        ...(navigation && track.artist
+          ? [{ id: "artist", label: t("menu.goArtist"), icon: <UserRound className="size-4" />, onSelect: () => navigation.searchFor(track.artist) }]
+          : []),
         {
           id: "like",
           label: liked ? t("player.unlike") : t("player.like"),
@@ -113,7 +125,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
             liked={isLiked(current.id)}
             onLike={toggleLike}
             onJump={() => jump(state.cursor)}
-            onMenu={(anchor) => openMenu(current, null, anchor)}
+            onMenu={(anchor, owner) => openMenu(current, null, anchor, owner)}
           />
         ) : (
           <p className="px-2 py-2 text-sm text-muted">{t("queue.empty")}</p>
@@ -139,16 +151,28 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
             {t("queue.nothingNext")}
           </p>
         ) : (
-          upNext.map((track, index) => (
-            <QueueRow
-              key={`${track.id}-${index}`}
-              track={track}
-              liked={isLiked(track.id)}
-              onLike={toggleLike}
-              onJump={() => jump(positionOf(index))}
-              onMenu={(anchor) => openMenu(track, index, anchor)}
-            />
-          ))
+          <div ref={(node) => { reorder.container.current = node; }}>
+            {upNext.map((track, index) => (
+              <QueueRow
+                key={`${track.id}-${index}`}
+                track={track}
+                liked={isLiked(track.id)}
+                onLike={toggleLike}
+                onJump={() => jump(positionOf(index))}
+                onMenu={(anchor, owner) => openMenu(track, index, anchor, owner)}
+                onGrab={reorder.start(index)}
+                dragState={
+                  reorder.drag === null
+                    ? undefined
+                    : index === reorder.drag.from
+                      ? "source"
+                      : index === reorder.drag.over
+                        ? reorder.drag.over > reorder.drag.from ? "below" : "above"
+                        : undefined
+                }
+              />
+            ))}
+          </div>
         )}
       </div>
     </aside>
@@ -162,26 +186,49 @@ function QueueRow({
   onLike,
   onJump,
   onMenu,
+  onGrab,
+  dragState,
 }: {
   track: Track;
   playing?: boolean;
   liked: boolean;
   onLike: (id: string) => void;
   onJump: () => void;
-  onMenu: (anchor: MenuAnchor) => void;
+  onMenu: (anchor: MenuAnchor, owner?: boolean) => void;
+  /** Present on upcoming rows only: starts a pointer drag to reorder. */
+  onGrab?: (event: React.PointerEvent) => void;
+  dragState?: "source" | "above" | "below";
 }) {
   const { t } = useI18n();
   return (
     <div
+      data-reorder-row={onGrab ? "" : undefined}
       onContextMenu={(event) => {
         event.preventDefault();
         onMenu(anchorFromEvent(event));
       }}
       className={cn(
-        "group flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-hover",
+        "group relative flex items-center gap-2 rounded-md p-2 transition-colors hover:bg-hover",
         playing && "bg-white/6",
+        dragState === "source" && "opacity-40",
+        dragState === "above" && "shadow-[inset_0_2px_0_var(--color-accent)]",
+        dragState === "below" && "shadow-[inset_0_-2px_0_var(--color-accent)]",
       )}
     >
+      {onGrab ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={t("queue.drag", { title: track.title })}
+          title={t("queue.drag", { title: track.title })}
+          onPointerDown={onGrab}
+          className="-ml-1 grid h-8 w-4 shrink-0 cursor-grab touch-none place-items-center text-subtle opacity-0 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </button>
+      ) : (
+        <span className="-ml-1 w-4 shrink-0" />
+      )}
       <button
         type="button"
         onClick={onJump}
@@ -215,7 +262,7 @@ function QueueRow({
         label={t("queue.more", { title: track.title })}
         aria-haspopup="menu"
         className="size-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-        onClick={(event) => onMenu(anchorFromElement(event.currentTarget, "down", "end"))}
+        onClick={(event) => onMenu(anchorFromElement(event.currentTarget, "down", "end"), true)}
       >
         <Ellipsis className="size-4" />
       </IconButton>

@@ -156,6 +156,8 @@ const pt = {
 
   "menu.play": "Tocar",
   "menu.playNow": "Tocar agora",
+  "menu.goAlbum": "Ir para o álbum",
+  "menu.goArtist": "Ir para o artista",
   "menu.playNext": "Tocar a seguir",
   "menu.addToQueue": "Adicionar à fila",
   "menu.download": "Baixar",
@@ -168,6 +170,7 @@ const pt = {
   "queue.addedLast": "“{title}” foi para a fila",
   "queue.addedLastMany": "{count} faixas foram para a fila",
   "queue.clear": "Limpar fila",
+  "queue.drag": "Arrastar para reordenar {title}",
   "queue.more": "Mais opções para {title}",
 
   "speed.title": "Velocidade",
@@ -184,7 +187,14 @@ const pt = {
   "sleep.armedTrack": "Pausa ao fim da faixa",
   "sleep.fired": "Timer de sono: a música foi pausada.",
 
+  "mini.enter": "Modo mini",
+  "mini.exit": "Voltar ao modo completo",
+  "mini.pin": "Manter sobre as outras janelas",
+  "mini.unpin": "Soltar das outras janelas",
+  "mini.windowFailed": "Não foi possível redimensionar a janela.",
+
   "keys.title": "Atalhos de teclado",
+  "keys.mini": "Alternar o modo mini",
   "keys.open": "Atalhos de teclado",
   "keys.close": "Fechar atalhos",
   "keys.toggle": "Tocar ou pausar",
@@ -413,6 +423,8 @@ const en: Record<MessageKey, string> = {
 
   "menu.play": "Play",
   "menu.playNow": "Play now",
+  "menu.goAlbum": "Go to album",
+  "menu.goArtist": "Go to artist",
   "menu.playNext": "Play next",
   "menu.addToQueue": "Add to queue",
   "menu.download": "Download",
@@ -425,6 +437,7 @@ const en: Record<MessageKey, string> = {
   "queue.addedLast": "“{title}” added to the queue",
   "queue.addedLastMany": "{count} tracks added to the queue",
   "queue.clear": "Clear queue",
+  "queue.drag": "Drag to reorder {title}",
   "queue.more": "More options for {title}",
 
   "speed.title": "Speed",
@@ -441,7 +454,14 @@ const en: Record<MessageKey, string> = {
   "sleep.armedTrack": "Pauses at the end of the track",
   "sleep.fired": "Sleep timer: playback paused.",
 
+  "mini.enter": "Mini mode",
+  "mini.exit": "Back to the full window",
+  "mini.pin": "Keep above other windows",
+  "mini.unpin": "Stop keeping above other windows",
+  "mini.windowFailed": "Could not resize the window.",
+
   "keys.title": "Keyboard shortcuts",
+  "keys.mini": "Toggle mini mode",
   "keys.open": "Keyboard shortcuts",
   "keys.close": "Close shortcuts",
   "keys.toggle": "Play or pause",

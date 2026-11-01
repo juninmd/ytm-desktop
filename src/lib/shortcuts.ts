@@ -17,6 +17,7 @@ export type Command =
   | "speed-down"
   | "speed-up"
   | "search"
+  | "mini"
   | "help";
 
 export type KeyInput = {
@@ -24,6 +25,7 @@ export type KeyInput = {
   ctrlKey: boolean;
   metaKey: boolean;
   altKey: boolean;
+  shiftKey?: boolean;
 };
 
 export type Target = {
@@ -42,14 +44,15 @@ export const SHORTCUTS: { command: Command; keys: string[]; label: MessageKey }[
   { command: "volume-up", keys: ["↑"], label: "keys.volumeUp" },
   { command: "volume-down", keys: ["↓"], label: "keys.volumeDown" },
   { command: "mute", keys: ["M"], label: "keys.mute" },
-  { command: "like", keys: ["L"], label: "keys.like" },
+  { command: "like", keys: ["L", "Alt Shift B"], label: "keys.like" },
   { command: "shuffle", keys: ["S"], label: "keys.shuffle" },
   { command: "repeat", keys: ["R"], label: "keys.repeat" },
   { command: "speed-down", keys: ["["], label: "keys.speedDown" },
   { command: "speed-up", keys: ["]"], label: "keys.speedUp" },
-  { command: "queue", keys: ["Q"], label: "keys.queue" },
+  { command: "queue", keys: ["Q", "Alt Shift Q"], label: "keys.queue" },
   { command: "lyrics", keys: ["Y"], label: "keys.lyrics" },
-  { command: "search", keys: ["/", "Ctrl K"], label: "keys.search" },
+  { command: "search", keys: ["/", "Ctrl K", "Ctrl L"], label: "keys.search" },
+  { command: "mini", keys: ["Ctrl Shift M"], label: "keys.mini" },
   { command: "help", keys: ["?"], label: "keys.help" },
 ];
 
@@ -95,12 +98,22 @@ export function targetOwnsKey(target: Target, key: string): boolean {
 /** Maps a key press to a command, or `null` when it is not one of ours. */
 export function resolveShortcut(input: KeyInput, target: Target): Command | null {
   if (targetOwnsKey(target, input.key)) return null;
-  if (input.metaKey || input.altKey) return null;
+  if (input.metaKey) return null;
+  if (input.altKey) {
+    // Alt+Shift chords for the two commands that otherwise need a bare letter.
+    if (!input.ctrlKey && input.shiftKey) {
+      const key = input.key.toLowerCase();
+      if (key === "q") return "queue";
+      if (key === "b") return "like";
+    }
+    return null;
+  }
 
   if (input.ctrlKey) {
+    if (input.shiftKey && input.key.toLowerCase() === "m") return "mini";
     if (input.key === "ArrowRight") return "next";
     if (input.key === "ArrowLeft") return "previous";
-    if (input.key.toLowerCase() === "k") return "search";
+    if (input.key.toLowerCase() === "k" || input.key.toLowerCase() === "l") return "search";
     return null;
   }
   return PLAIN[input.key.length === 1 ? input.key.toLowerCase() : input.key] ?? null;

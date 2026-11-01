@@ -65,7 +65,8 @@ type Props = {
   label: string;
   items: MenuItem[];
   anchor: MenuAnchor;
-  onClose: () => void;
+  /** `outside` means the user pressed elsewhere (as opposed to choosing or Escape). */
+  onClose: (reason?: "outside") => void;
 };
 
 export function Menu({ label, items, anchor, onClose }: Props) {
@@ -98,17 +99,18 @@ export function Menu({ label, items, anchor, onClose }: Props) {
   useEffect(() => {
     const away = (event: Event) => {
       if (event.target instanceof Node && ref.current?.contains(event.target)) return;
-      onClose();
+      onClose("outside");
     };
+    const dismiss = () => onClose();
     window.addEventListener("pointerdown", away, true);
-    window.addEventListener("blur", onClose);
-    window.addEventListener("resize", onClose);
-    window.addEventListener("wheel", onClose, { passive: true });
+    window.addEventListener("blur", dismiss);
+    window.addEventListener("resize", dismiss);
+    window.addEventListener("wheel", dismiss, { passive: true });
     return () => {
       window.removeEventListener("pointerdown", away, true);
-      window.removeEventListener("blur", onClose);
-      window.removeEventListener("resize", onClose);
-      window.removeEventListener("wheel", onClose);
+      window.removeEventListener("blur", dismiss);
+      window.removeEventListener("resize", dismiss);
+      window.removeEventListener("wheel", dismiss);
     };
   }, [onClose]);
 

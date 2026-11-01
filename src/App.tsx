@@ -5,6 +5,7 @@ import { ArtistView } from "./components/ArtistView";
 import { DownloadsView } from "./components/DownloadsView";
 import { HomeView } from "./components/HomeView";
 import { LibraryView } from "./components/LibraryView";
+import { MiniPlayer } from "./components/MiniPlayer";
 import { LyricsPanel } from "./components/LyricsPanel";
 import { PlayerBar } from "./components/PlayerBar";
 import { QueuePanel } from "./components/QueuePanel";
@@ -17,6 +18,8 @@ import { Logo } from "./components/ui/Logo";
 import { CatalogProvider, useCatalog } from "./hooks/useCatalog";
 import { useAuth } from "./hooks/useAuth";
 import { PlayerProvider, usePlayer } from "./hooks/usePlayer";
+import { useMiniMode } from "./hooks/useMiniMode";
+import { NavigationProvider } from "./hooks/useNavigation";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { I18nProvider, useI18n } from "./lib/i18n";
 import { fetchRadio } from "./lib/music";
@@ -96,10 +99,12 @@ function Workspace({
     setLyricsOpen((open) => !open);
     setQueueOpen(false);
   };
+  const miniMode = useMiniMode(() => player.notify(t("mini.windowFailed")));
   useShortcuts({
     toggleQueue,
     toggleLyrics,
     toggleHelp: () => setHelpOpen((open) => !open),
+    toggleMini: () => void miniMode.toggle(),
   });
 
   const navigate = (next: View) => {
@@ -171,70 +176,90 @@ function Workspace({
     content = <HomeView onOpen={openCollection} />;
   }
 
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex min-h-0 flex-1 gap-2 p-2">
-        <Sidebar view={view} onNavigate={navigate} session={session} onSignOut={onSignOut} />
-
-        <main className="rounded-panel flex min-w-0 flex-1 flex-col overflow-hidden bg-panel">
-          <TopBar
-            query={query}
-            onQueryChange={setQuery}
-            onBack={goBack}
-            queueOpen={queueOpen}
-            onToggleQueue={toggleQueue}
-            onOpenShortcuts={() => setHelpOpen(true)}
-          />
-          {player.resolverAvailable === false && (
-            <div className="flex items-start gap-2.5 border-b border-line bg-accent/8 px-4 py-2.5 text-xs">
-              <TriangleAlert className="mt-px size-4 shrink-0 text-accent" />
-              <p className="text-fg/85">
-                <span className="font-medium">{t("app.noAudio")}</span> {t("app.noAudioBody")}
-              </p>
-            </div>
-          )}
-          <div className="scroll-area min-h-0 flex-1 overflow-y-auto">{content}</div>
-        </main>
-
-        {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
-        {lyricsOpen && <LyricsPanel onClose={() => setLyricsOpen(false)} />}
-      </div>
-
-      <PlayerBar
-        queueOpen={queueOpen}
-        onToggleQueue={toggleQueue}
-        lyricsOpen={lyricsOpen}
-        onToggleLyrics={toggleLyrics}
+  // Mini mode swaps the whole workspace for the compact strip; playback, the
+  // radio effect and the shortcuts above keep running underneath.
+  if (miniMode.mini) {
+    return (
+      <MiniPlayer
+        pinned={miniMode.pinned}
+        onTogglePin={miniMode.togglePin}
+        onExit={() => void miniMode.toggle()}
       />
+    );
+  }
 
-      <div className="sr-only" aria-live="polite">
-        {player.current
-          ? t("app.playing", { title: player.current.title, artist: player.current.artist })
-          : ""}
-      </div>
+  const navigation = {
+    openAlbum: (id: string) => navigate({ kind: "album", id }),
+    searchFor: (text: string) => setQuery(text),
+  };
 
-      {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
+  return (
+    <NavigationProvider value={navigation}>
+      <div className="flex h-full flex-col">
+        <div className="flex min-h-0 flex-1 gap-2 p-2">
+          <Sidebar view={view} onNavigate={navigate} session={session} onSignOut={onSignOut} />
 
-      {notice && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[104px] z-50 flex justify-center px-4">
-          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-line bg-raised px-4 py-2 text-xs text-fg shadow-[0_10px_30px_rgb(0_0_0/0.5)]">
-            {player.noticeTone === "info" ? (
-              <CircleCheck className="size-3.5 shrink-0 text-accent" />
-            ) : (
-              <TriangleAlert className="size-3.5 shrink-0 text-accent" />
+          <main className="rounded-panel flex min-w-0 flex-1 flex-col overflow-hidden bg-panel">
+            <TopBar
+              query={query}
+              onQueryChange={setQuery}
+              onBack={goBack}
+              queueOpen={queueOpen}
+              onToggleQueue={toggleQueue}
+              onOpenShortcuts={() => setHelpOpen(true)}
+            onOpenMini={() => void miniMode.toggle()}
+            />
+            {player.resolverAvailable === false && (
+              <div className="flex items-start gap-2.5 border-b border-line bg-accent/8 px-4 py-2.5 text-xs">
+                <TriangleAlert className="mt-px size-4 shrink-0 text-accent" />
+                <p className="text-fg/85">
+                  <span className="font-medium">{t("app.noAudio")}</span> {t("app.noAudioBody")}
+                </p>
+              </div>
             )}
-            {notice}
-            <button
-              type="button"
-              onClick={dismissNotice}
-              aria-label={t("app.dismiss")}
-              className="text-subtle transition-colors hover:text-fg"
-            >
-              ✕
-            </button>
-          </div>
+            <div className="scroll-area min-h-0 flex-1 overflow-y-auto">{content}</div>
+          </main>
+
+          {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
+          {lyricsOpen && <LyricsPanel onClose={() => setLyricsOpen(false)} />}
         </div>
-      )}
-    </div>
+
+        <PlayerBar
+          queueOpen={queueOpen}
+          onToggleQueue={toggleQueue}
+          lyricsOpen={lyricsOpen}
+          onToggleLyrics={toggleLyrics}
+        />
+
+        <div className="sr-only" aria-live="polite">
+          {player.current
+            ? t("app.playing", { title: player.current.title, artist: player.current.artist })
+            : ""}
+        </div>
+
+        {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
+
+        {notice && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-[104px] z-50 flex justify-center px-4">
+            <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-line bg-raised px-4 py-2 text-xs text-fg shadow-[0_10px_30px_rgb(0_0_0/0.5)]">
+              {player.noticeTone === "info" ? (
+                <CircleCheck className="size-3.5 shrink-0 text-accent" />
+              ) : (
+                <TriangleAlert className="size-3.5 shrink-0 text-accent" />
+              )}
+              {notice}
+              <button
+                type="button"
+                onClick={dismissNotice}
+                aria-label={t("app.dismiss")}
+                className="text-subtle transition-colors hover:text-fg"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </NavigationProvider>
   );
 }

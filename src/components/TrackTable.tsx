@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Check, Clock, Download, Ellipsis, Heart, ListEnd, ListStart, Loader2, Play } from "lucide-react";
+import { Check, Clock, Disc3, Download, Ellipsis, Heart, ListEnd, ListStart, Loader2, Play, UserRound } from "lucide-react";
 import { Cover } from "./Cover";
 import { Eq } from "./ui/Eq";
 import { IconButton } from "./ui/IconButton";
 import { anchorFromElement, anchorFromEvent, type MenuAnchor } from "./ui/Menu";
 import { useMenu } from "./ui/useMenu";
+import { useNavigation } from "../hooks/useNavigation";
 import { usePlayer } from "../hooks/usePlayer";
 import { useCatalog } from "../hooks/useCatalog";
 import { cn } from "../lib/cn";
@@ -39,6 +40,7 @@ export function TrackTable({
   const { t } = useI18n();
   const [busy, setBusy] = useState<string[]>([]);
   const menu = useMenu();
+  const navigation = useNavigation();
   const row = showAlbum ? ROW["with-album"] : ROW["no-album"];
 
   const save = (track: Track) => {
@@ -55,15 +57,21 @@ export function TrackTable({
       .finally(() => setBusy((current) => current.filter((id) => id !== track.id)));
   };
 
-  const openMenu = (track: Track, index: number, anchor: MenuAnchor) => {
+  const openMenu = (track: Track, index: number, anchor: MenuAnchor, owner = false) => {
     const liked = isLiked(track.id);
-    menu.show(
+    (owner ? menu.toggle : menu.show)(
       t("track.more", { title: track.title }),
       [
         { id: "play", label: t("menu.play"), icon: <Play className="size-4" />, onSelect: () => play(tracks, index) },
         { id: "next", label: t("menu.playNext"), icon: <ListStart className="size-4" />, onSelect: () => enqueue([track], "next") },
         { id: "last", label: t("menu.addToQueue"), icon: <ListEnd className="size-4" />, onSelect: () => enqueue([track], "last") },
         { id: "divider", separator: true },
+        ...(navigation && track.albumId
+          ? [{ id: "album", label: t("menu.goAlbum"), icon: <Disc3 className="size-4" />, onSelect: () => navigation.openAlbum(track.albumId) }]
+          : []),
+        ...(navigation && track.artist
+          ? [{ id: "artist", label: t("menu.goArtist"), icon: <UserRound className="size-4" />, onSelect: () => navigation.searchFor(track.artist) }]
+          : []),
         {
           id: "like",
           label: liked ? t("player.unlike") : t("player.like"),
@@ -178,7 +186,7 @@ export function TrackTable({
                 <IconButton
                   label={t("track.more", { title: track.title })}
                   aria-haspopup="menu"
-                  onClick={(event) => openMenu(track, index, anchorFromElement(event.currentTarget, "down", "end"))}
+                  onClick={(event) => openMenu(track, index, anchorFromElement(event.currentTarget, "down", "end"), true)}
                   className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                 >
                   <Ellipsis className="size-4" />

@@ -64,6 +64,10 @@ await page.addInitScript(
     const downloads = [];
     window.__invokeCalls = calls;
     window.__TAURI_INTERNALS__ = {
+      metadata: {
+        currentWindow: { label: "main" },
+        currentWebview: { label: "main", windowLabel: "main" },
+      },
       transformCallback: () => 0,
       unregisterCallback: () => {},
       convertFileSrc: (path) => path,
@@ -93,7 +97,11 @@ await page.addInitScript(
               tracks: [],
             };
           case "music_search":
-            return { collections: [], tracks: [track], sections: [] };
+            return {
+              collections: [],
+              tracks: [track, { ...track, id: "v2", title: "Segunda Faixa", albumId: "al2" }],
+              sections: [],
+            };
           case "music_more":
             return { collections: [], tracks: [], sections: [] };
           case "music_radio":
@@ -148,6 +156,14 @@ await page.addInitScript(
             return downloads;
           case "music_delete_download":
             return null;
+          case "plugin:window|is_maximized":
+            return false;
+          case "plugin:window|scale_factor":
+            return 1;
+          case "plugin:window|inner_size":
+            return { width: 1320, height: 860 };
+          case "plugin:window|outer_position":
+            return { x: 120, y: 80 };
           case "cookie_browsers":
             return ["firefox", "chrome"];
           case "auth_save_cookies":
@@ -261,6 +277,9 @@ check(
 
 // 7b. Queue control: the row's context menu queues a track, the panel edits it.
 const row = page.getByRole("row").filter({ hasText: "Faixa do Backend" }).first();
+// Playing from a result list queues the whole list; start from a clean queue.
+await page.getByRole("button", { name: "Limpar fila" }).click();
+await page.waitForSelector("text=Nada na sequência");
 await row.click({ button: "right" });
 await page.getByRole("menuitem", { name: "Tocar a seguir" }).waitFor();
 await shot("17-desktop-context-menu");
@@ -282,6 +301,37 @@ await page.getByRole("button", { name: "Limpar fila" }).click();
 await page.waitForSelector("text=Nada na sequência");
 check("clearing the queue keeps only what is playing", true);
 
+// 7b2. Drag a queued track to reorder, and jump to a track's album from its menu.
+await page.getByRole("row").filter({ hasText: "Segunda Faixa" }).first().click({ button: "right" });
+await page.getByRole("menuitem", { name: "Adicionar à fila" }).click();
+await row.click({ button: "right" });
+await page.getByRole("menuitem", { name: "Adicionar à fila" }).click();
+await page.waitForSelector("text=A seguir · 2");
+const queued = () =>
+  page.evaluate(() => [...document.querySelectorAll("[data-reorder-row]")].map((node) => node.textContent));
+check("queued tracks keep the order they were added in", (await queued())[0].includes("Segunda Faixa"));
+const queueRows = page.locator("[data-reorder-row]");
+await queueRows.first().hover();
+const grip = await page.getByRole("button", { name: /Arrastar para reordenar/ }).first().boundingBox();
+const target = await queueRows.nth(1).boundingBox();
+await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+await page.mouse.down();
+await page.mouse.move(grip.x + 4, target.y + target.height - 4, { steps: 8 });
+await page.mouse.up();
+check("dragging a queued track reorders the queue", (await queued())[0].includes("Faixa do Backend"));
+await page.getByRole("button", { name: "Limpar fila" }).click();
+
+await row.click({ button: "right" });
+await page.getByRole("menuitem", { name: "Ir para o álbum" }).click();
+await page.waitForFunction(
+  () => window.__invokeCalls.some((call) => call.cmd === "music_browse" && call.args?.id === "al1"),
+  null,
+  { timeout: 3000 },
+);
+check("Go to album opens the track's album", true);
+await page.getByRole("searchbox", { name: "Buscar no catálogo" }).fill("faixa");
+await page.waitForSelector("text=Segunda Faixa");
+
 // 7c. Playback speed and the sleep timer live next to the volume.
 await page.getByRole("button", { name: /Velocidade de reprodução/ }).click();
 await page.getByRole("menuitemradio", { name: "1.5×" }).click();
@@ -301,6 +351,12 @@ check(
   (await page.getByRole("button", { name: "Velocidade de reprodução: 1×" }).count()) === 1,
 );
 
+// A second click on the button that owns an open menu closes it (no flicker-reopen).
+await page.getByRole("button", { name: "Timer de sono" }).click();
+await page.getByRole("menu").waitFor();
+await page.getByRole("button", { name: "Timer de sono" }).click();
+await page.waitForTimeout(400);
+check("clicking the trigger again closes its menu", (await page.getByRole("menu").count()) === 0);
 await page.getByRole("button", { name: "Timer de sono" }).click();
 await page.getByRole("menuitemradio", { name: "15 minutos" }).click();
 await page.waitForFunction(
@@ -343,6 +399,45 @@ check(
   (await page.getByRole("button", { name: "Ativar som" }).count()) === 1,
 );
 await page.keyboard.press("m");
+
+// 7e. Mini mode: the workspace gives way to a compact strip and the window shrinks.
+const windowCall = (name) =>
+  page.evaluate((cmd) => window.__invokeCalls.filter((call) => call.cmd === cmd), `plugin:window|${name}`);
+await page.keyboard.press("Control+Shift+M");
+await page.waitForSelector("[data-mini]");
+const shrink = (await windowCall("set_size")).at(-1);
+check(
+  "mini mode shrinks the native window",
+  JSON.stringify(shrink?.args).includes("420") && JSON.stringify(shrink?.args).includes("150"),
+);
+check(
+  "mini mode pins the window above the others",
+  JSON.stringify((await windowCall("set_always_on_top")).at(-1)?.args).includes("true"),
+);
+await page.setViewportSize({ width: 420, height: 150 });
+await page.waitForTimeout(200);
+check(
+  "the strip fits its window without scrolling",
+  await page.evaluate(
+    () => document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth,
+  ),
+);
+await shot("20-desktop-mini-mode");
+await page.getByRole("button", { name: "Pausar" }).click();
+check("the strip drives the transport", (await page.getByRole("button", { name: "Tocar", exact: true }).count()) === 1);
+await page.getByRole("button", { name: "Tocar", exact: true }).click();
+await page.getByRole("button", { name: "Voltar ao modo completo" }).click();
+await page.setViewportSize({ width: 1440, height: 900 });
+await page.waitForSelector("text=Resultados para");
+const restore = (await windowCall("set_size")).at(-1);
+check(
+  "leaving mini mode restores the full window size",
+  JSON.stringify(restore?.args).includes("1320") && JSON.stringify(restore?.args).includes("860"),
+);
+check(
+  "leaving mini mode restores the position",
+  JSON.stringify((await windowCall("set_position")).at(-1)?.args).includes("120"),
+);
 
 // 8. Downloading a track reaches the backend, and it shows under "Baixados".
 await page.getByRole("button", { name: "Baixar Faixa do Backend" }).first().click();

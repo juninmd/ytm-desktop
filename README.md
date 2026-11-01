@@ -36,6 +36,7 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 | Stream cache | Resolved urls are cached until they expire; the next track is prefetched |
 | Offline downloads | **Real** — a track is saved to disk with `yt-dlp` and played from the file (asset protocol), so it works without a network |
 | Queue control | **Real** — *Play next*, *Add to queue*, remove, reorder and *Clear queue*, from a right-click menu on any track row and from the queue panel; the queue is saved in play order, so edits and shuffle survive a restart |
+| Mini mode | **Prototype** — the workspace collapses into a 420×150 strip (artwork, seek bar, transport, like, volume) and the native window shrinks to match, stays above other windows while pinned (toggle in the strip), and returns to its exact previous size and position. Checked against the real window: 1320×860 → 420×150 → 1320×860, same screen position `Ctrl Shift M` or the button in the top bar |
 | Playback speed | **Real** — 0.5× to 2× on the audio element with pitch preserved, remembered between launches |
 | Sleep timer | **Real** — 5 to 60 minutes (the volume eases out over the last 10 s) or *at the end of this track* |
 | Session | The queue, current track and playhead are restored **paused** on the next launch |
@@ -140,14 +141,17 @@ value is ever committed.
 | `↑` `↓` | Volume ±5 % (the wheel over the volume bar does the same) |
 | `n` / `p`, `Ctrl` `→` / `←` | Next / previous track |
 | `m` | Mute |
-| `l` | Like the current track |
+| `l` or `Alt` `Shift` `B` | Like the current track |
 | `s` / `r` | Shuffle / cycle repeat |
 | `[` / `]` | Slower / faster |
-| `q` / `y` | Show or hide the queue / the lyrics |
-| `/` or `Ctrl` `K` | Go to search |
+| `q` or `Alt` `Shift` `Q` / `y` | Show or hide the queue / the lyrics |
+| `/` or `Ctrl` `K` / `Ctrl` `L` | Go to search |
+| `Ctrl` `Shift` `M` | Toggle mini mode |
 
 Ignored while typing in a field. A focused button keeps `Space` and `Enter`, and a focused slider keeps
 the arrow keys, so the rest of the map keeps working after you click a control.
+
+![Mini mode](docs/screenshots/20-desktop-mini-mode.png)
 
 ![Context menu](docs/screenshots/17-desktop-context-menu.png)
 
@@ -166,6 +170,7 @@ src/
   hooks/playerReducer.ts   pure playback state machine (unit-tested)
   hooks/usePlayer.tsx      reducer + the real <audio> sink + Media Session
   hooks/useSleepTimer.ts   countdown with a volume fade, or "end of track"
+  hooks/useMiniMode.ts     mini mode state + native window resize/restore (lib/miniWindow.ts)
   hooks/useShortcuts.ts    binds the keyboard map (lib/shortcuts.ts) once
   hooks/useAuth.tsx        device-flow state machine
   hooks/usePlayCollection.ts
@@ -179,7 +184,7 @@ src/
   components/              Sidebar, TopBar, HomeView, CollectionView,
                            TrackTable, PlayerBar, QueuePanel, SignInScreen,
                            LibraryCookieForm, LyricsPanel, DownloadsView,
-                           PlaybackOptions (speed, sleep), ShortcutsDialog, ui/Menu
+                           PlaybackOptions (speed, sleep), MiniPlayer, ShortcutsDialog, ui/Menu
 src-tauri/src/
   auth.rs                  device flow, token + cookie vault, SAPISIDHASH signing
   innertube.rs             real YouTube Music catalogue client (search/browse/home/library/rate)
@@ -235,7 +240,7 @@ console error. `tools/e2e.mjs` injects a fake `__TAURI_INTERNALS__.invoke` befor
 `isDesktop()` is true and the **desktop-only** UI runs against a stub: it asserts the real catalogue
 renders, the missing-yt-dlp banner appears, the connected library loads, search returns backend
 tracks, and a like reaches `music_rate`; it also drives the context menu, queue edits, speed, sleep
-timer and the shortcut sheet. It writes `10`–`19`. `09-native-window.png` is a one-off
+timer and the shortcut sheet. It writes `10`–`20`. `09-native-window.png` is a one-off
 capture of the running binary (`cargo build`, then `PrintWindow` against the window), which is why it
 shows real window chrome.
 
