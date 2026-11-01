@@ -23,8 +23,11 @@ import {
   createInitialState,
   MAX_RESUME_TRACKS,
   reducer,
+  snapshotSession,
   type Preferences,
 } from "./playerReducer";
+import { useSleepTimer } from "./useSleepTimer";
+import type { SleepTimer } from "../lib/sleepTimer";
 import { useI18n } from "../lib/i18n";
 
 /**
@@ -98,10 +101,11 @@ function loadPreferences(): Preferences {
       repeat: parsed.repeat === "all" || parsed.repeat === "one" ? parsed.repeat : "off",
       liked: Array.isArray(parsed.liked) ? parsed.liked : [],
       autoplay: typeof parsed.autoplay === "boolean" ? parsed.autoplay : true,
+      rate: typeof parsed.rate === "number" && Number.isFinite(parsed.rate) ? parsed.rate : 1,
       session: readSession(parsed.session),
     };
   } catch {
-    return { volume: 0.7, repeat: "off", liked: [], autoplay: true };
+    return { volume: 0.7, repeat: "off", liked: [], autoplay: true, rate: 1 };
   }
 }
 
@@ -137,11 +141,26 @@ export type PlayerApi = {
   appendRadio: (tracks: Track[]) => void;
   /** Turns the end-of-queue radio on or off. */
   toggleAutoplay: () => void;
+  /** Queues tracks right after the current one, or at the end. */
+  enqueue: (tracks: Track[], where: "next" | "last") => void;
+  /** Queue edits address upcoming entries by their position in play order. */
+  dequeue: (position: number) => void;
+  moveQueued: (from: number, to: number) => void;
+  clearUpcoming: () => void;
+  jump: (position: number) => void;
+  setRate: (value: number) => void;
+  /** The armed sleep timer, if any. */
+  sleep: SleepTimer | null;
+  startSleep: (minutes: number) => void;
+  sleepAtEndOfTrack: () => void;
+  cancelSleep: () => void;
   /** Dismissible, short-lived message (e.g. a failed account write). */
   notice: string | null;
+  /** `warn` is an error the user should look at; `info` is a plain confirmation. */
+  noticeTone: "info" | "warn";
   dismissNotice: () => void;
   /** Shows a short-lived message (e.g. a failed download). */
-  notify: (message: string) => void;
+  notify: (message: string, tone?: "info" | "warn") => void;
   isLiked: (id: string) => boolean;
   isCurrent: (id: string) => boolean;
 };
@@ -157,7 +176,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [engine, setEngine] = useState<PlaybackEngine>("sim");
   const [resolverAvailable, setResolverAvailable] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<"info" | "warn">("warn");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Sleep-timer fade, multiplied into every volume applied to the element.
+  const fadeRef = useRef(1);
   const noticeTimer = useRef<number | undefined>(undefined);
 
   // Latest state, readable from audio callbacks without re-subscribing.
@@ -218,8 +240,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         : await resolveRemoteStream(currentId);
       if (cancelled) return;
       usedLocal = info.local;
-      audio.volume = stateRef.current.volume;
+      audio.volume = stateRef.current.volume * fadeRef.current;
       audio.muted = stateRef.current.muted;
+      // Setting `src` resets the rate to the default, so both are set.
+      audio.defaultPlaybackRate = stateRef.current.rate;
+      audio.playbackRate = stateRef.current.rate;
       audio.src = info.local ? localStreamUrl(info.url) : info.url;
       audio.load();
       if (stateRef.current.isPlaying) {
@@ -246,7 +271,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onEnded = () => {
       const latest = stateRef.current;
       dispatch({ type: "ended" });
-      if (latest.repeat === "one") {
+      if (latest.repeat === "one" && !latest.stopAfterTrack) {
         audio.currentTime = 0;
         void audio.play().catch(() => {});
       }
@@ -282,20 +307,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!audio || engine !== "audio") return;
     if (state.isPlaying) void audio.play().catch(() => {});
     else audio.pause();
+    // A sleep fade leaves the element silent; paused now, it is safe to restore.
+    audio.volume = stateRef.current.volume * fadeRef.current;
   }, [state.isPlaying, engine]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.volume = state.volume;
+    audio.volume = state.volume * fadeRef.current;
     audio.muted = state.muted;
   }, [state.volume, state.muted, engine]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.defaultPlaybackRate = state.rate;
+    audio.playbackRate = state.rate;
+  }, [state.rate, engine]);
 
   // Simulated tick — only while no real audio is driving the playhead.
   useEffect(() => {
     if (!state.isPlaying || engine === "audio") return;
     const timer = window.setInterval(() => {
-      dispatch({ type: "tick", delta: TICK_MS / 1000 });
+      dispatch({ type: "tick", delta: (TICK_MS / 1000) * stateRef.current.rate });
     }, TICK_MS);
     return () => window.clearInterval(timer);
   }, [state.isPlaying, engine]);
@@ -311,18 +345,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       repeat: state.repeat,
       liked: state.liked,
       autoplay: state.autoplay,
-      session:
-        state.queue.length > 0
-          ? {
-              queue: state.queue.slice(0, MAX_RESUME_TRACKS),
-              // A queue index, not a cursor: `order` is not persisted, so the
-              // restored state rebuilds it as the identity.
-              cursor: state.order[state.cursor] ?? 0,
-              position: state.position,
-              shuffle: state.shuffle,
-              savedAt: Date.now(),
-            }
-          : undefined,
+      rate: state.rate,
+      session: snapshotSession(stateRef.current),
     };
     writePreferences(persisted.current);
   }, [
@@ -330,7 +354,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     state.repeat,
     state.liked,
     state.autoplay,
+    state.rate,
     state.queue,
+    state.order,
     state.cursor,
     state.shuffle,
     state.isPlaying,
@@ -340,17 +366,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!state.isPlaying) return;
     const timer = window.setInterval(() => {
-      const latest = stateRef.current;
-      if (latest.queue.length === 0) return;
       persisted.current = {
         ...persisted.current,
-        session: {
-          queue: latest.queue.slice(0, MAX_RESUME_TRACKS),
-          cursor: latest.order[latest.cursor] ?? 0,
-          position: latest.position,
-          shuffle: latest.shuffle,
-          savedAt: Date.now(),
-        },
+        session: snapshotSession(stateRef.current),
       };
       writePreferences(persisted.current);
     }, 5000);
@@ -373,8 +391,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "seek", position: seconds });
   }, []);
 
-  const flash = useCallback((message: string) => {
+  const flash = useCallback((message: string, tone: "info" | "warn" = "warn") => {
     setNotice(message);
+    setNoticeTone(tone);
     window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setNotice(null), 5000);
   }, []);
@@ -414,6 +433,50 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const toggleAutoplay = useCallback(() => {
     dispatch({ type: "autoplay" });
   }, []);
+
+  const enqueue = useCallback(
+    (tracks: Track[], where: "next" | "last") => {
+      if (tracks.length === 0) return;
+      const idle = stateRef.current.queue.length === 0;
+      dispatch({ type: "enqueue", tracks, where });
+      if (idle) return; // it just started playing; there is nothing to confirm
+      const one = tracks.length === 1;
+      const key =
+        where === "next"
+          ? one ? "queue.addedNext" : "queue.addedNextMany"
+          : one ? "queue.addedLast" : "queue.addedLastMany";
+      flash(t(key, { title: tracks[0].title, count: tracks.length }), "info");
+    },
+    [flash, t],
+  );
+
+  const dequeue = useCallback((position: number) => dispatch({ type: "dequeue", position }), []);
+  const moveQueued = useCallback(
+    (from: number, to: number) => dispatch({ type: "move", from, to }),
+    [],
+  );
+  const clearUpcoming = useCallback(() => dispatch({ type: "clear-upcoming" }), []);
+  const jump = useCallback((position: number) => dispatch({ type: "jump", position }), []);
+  const setRate = useCallback((value: number) => dispatch({ type: "rate", value }), []);
+
+  const setStopAfterTrack = useCallback(
+    (value: boolean) => dispatch({ type: "stop-after", value }),
+    [],
+  );
+  const onSleepExpire = useCallback(() => {
+    dispatch({ type: "pause" });
+    flash(t("sleep.fired"), "info");
+  }, [flash, t]);
+  const { sleep, setSleep, startMinutes } = useSleepTimer({
+    getAudio: () => audioRef.current,
+    getVolume: () => stateRef.current.volume,
+    fade: fadeRef,
+    stopAfterTrack: state.stopAfterTrack,
+    setStopAfterTrack,
+    onExpire: onSleepExpire,
+  });
+  const sleepAtEndOfTrack = useCallback(() => setSleep({ kind: "track" }), [setSleep]);
+  const cancelSleep = useCallback(() => setSleep(null), [setSleep]);
 
   const dismissNotice = useCallback(() => {
     window.clearTimeout(noticeTimer.current);
@@ -507,13 +570,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         session.setPositionState({
           duration,
           position: Math.min(Math.max(state.position, 0), duration),
-          playbackRate: 1,
+          playbackRate: state.rate,
         });
       } catch {
         // Ignore an inconsistent position rather than throwing.
       }
     }
-  }, [current, state.position]);
+  }, [current, state.position, state.rate]);
 
   const api = useMemo<PlayerApi>(() => {
     const upNext = state.order
@@ -539,7 +602,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       syncLiked,
       appendRadio,
       toggleAutoplay,
+      enqueue,
+      dequeue,
+      moveQueued,
+      clearUpcoming,
+      jump,
+      setRate,
+      sleep,
+      startSleep: startMinutes,
+      sleepAtEndOfTrack,
+      cancelSleep,
       notice,
+      noticeTone,
       dismissNotice,
       notify: flash,
       isLiked: (id) => state.liked.includes(id),
@@ -556,7 +630,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     syncLiked,
     appendRadio,
     toggleAutoplay,
+    enqueue,
+    dequeue,
+    moveQueued,
+    clearUpcoming,
+    jump,
+    setRate,
+    sleep,
+    startMinutes,
+    sleepAtEndOfTrack,
+    cancelSleep,
     notice,
+    noticeTone,
     dismissNotice,
     flash,
   ]);

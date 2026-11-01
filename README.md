@@ -35,6 +35,9 @@ And the same UI inside the actual Tauri window on Windows — not a browser tab:
 | Autoplay / radio | **Real** — when the queue ends, the track's radio continues it (toggleable in the queue) |
 | Stream cache | Resolved urls are cached until they expire; the next track is prefetched |
 | Offline downloads | **Real** — a track is saved to disk with `yt-dlp` and played from the file (asset protocol), so it works without a network |
+| Queue control | **Real** — *Play next*, *Add to queue*, remove, reorder and *Clear queue*, from a right-click menu on any track row and from the queue panel; the queue is saved in play order, so edits and shuffle survive a restart |
+| Playback speed | **Real** — 0.5× to 2× on the audio element with pitch preserved, remembered between launches |
+| Sleep timer | **Real** — 5 to 60 minutes (the volume eases out over the last 10 s) or *at the end of this track* |
 | Session | The queue, current track and playhead are restored **paused** on the next launch |
 | Language | The whole interface is bilingual (pt-BR / English), and the switch also changes the catalogue's data language (`hl`) |
 | Sign-in | **Real** OAuth 2.0 device flow in Rust against Google; sign-out revokes the grant |
@@ -128,15 +131,29 @@ value is ever committed.
 
 ## Keyboard
 
+`?` (or the keyboard button in the top bar) opens the full list in the app.
+
 | Key | Action |
 |---|---|
 | `Space` | Play / pause |
 | `←` `→` | Seek ∓5 s |
-| `↑` `↓` | Volume ±5 % |
-| `n` / `p` | Next / previous track |
+| `↑` `↓` | Volume ±5 % (the wheel over the volume bar does the same) |
+| `n` / `p`, `Ctrl` `→` / `←` | Next / previous track |
 | `m` | Mute |
+| `l` | Like the current track |
+| `s` / `r` | Shuffle / cycle repeat |
+| `[` / `]` | Slower / faster |
+| `q` / `y` | Show or hide the queue / the lyrics |
+| `/` or `Ctrl` `K` | Go to search |
 
-Ignored while typing in a field or while a button has focus, so nothing hijacks expected behaviour.
+Ignored while typing in a field. A focused button keeps `Space` and `Enter`, and a focused slider keeps
+the arrow keys, so the rest of the map keeps working after you click a control.
+
+![Context menu](docs/screenshots/17-desktop-context-menu.png)
+
+| | |
+|---|---|
+| ![Sleep timer](docs/screenshots/18-desktop-sleep-timer.png) | ![Shortcuts](docs/screenshots/19-desktop-shortcuts.png) |
 
 ## Project structure
 
@@ -148,16 +165,21 @@ src/
   hooks/useCatalog.tsx     catalogue store: real InnerTube or the mock
   hooks/playerReducer.ts   pure playback state machine (unit-tested)
   hooks/usePlayer.tsx      reducer + the real <audio> sink + Media Session
+  hooks/useSleepTimer.ts   countdown with a volume fade, or "end of track"
+  hooks/useShortcuts.ts    binds the keyboard map (lib/shortcuts.ts) once
   hooks/useAuth.tsx        device-flow state machine
   hooks/usePlayCollection.ts
   lib/auth.ts              Tauri IPC boundary + browser fallback
   lib/music.ts             catalogue/stream/rate IPC boundary + browser fallback
   lib/catalog.ts           pure catalogue merge (unit-tested)
+  lib/shortcuts.ts         key -> command table; also drives the in-app help sheet
+  lib/sleepTimer.ts        pure timer maths (unit-tested)
   lib/i18n.tsx             bilingual interface (pt-BR / English)
   lib/cover.ts             deterministic artwork from a hash
   components/              Sidebar, TopBar, HomeView, CollectionView,
                            TrackTable, PlayerBar, QueuePanel, SignInScreen,
-                           LibraryCookieForm, LyricsPanel, DownloadsView
+                           LibraryCookieForm, LyricsPanel, DownloadsView,
+                           PlaybackOptions (speed, sleep), ShortcutsDialog, ui/Menu
 src-tauri/src/
   auth.rs                  device flow, token + cookie vault, SAPISIDHASH signing
   innertube.rs             real YouTube Music catalogue client (search/browse/home/library/rate)
@@ -212,7 +234,8 @@ cd src-tauri && YTM_LIVE=1 cargo test --lib
 console error. `tools/e2e.mjs` injects a fake `__TAURI_INTERNALS__.invoke` before the app loads, so
 `isDesktop()` is true and the **desktop-only** UI runs against a stub: it asserts the real catalogue
 renders, the missing-yt-dlp banner appears, the connected library loads, search returns backend
-tracks, and a like reaches `music_rate`. It writes `10`–`13`. `09-native-window.png` is a one-off
+tracks, and a like reaches `music_rate`; it also drives the context menu, queue edits, speed, sleep
+timer and the shortcut sheet. It writes `10`–`19`. `09-native-window.png` is a one-off
 capture of the running binary (`cargo build`, then `PrintWindow` against the window), which is why it
 shows real window chrome.
 

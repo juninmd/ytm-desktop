@@ -14,6 +14,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { Cover } from "./Cover";
+import { PlaybackOptions } from "./PlaybackOptions";
 import { IconButton } from "./ui/IconButton";
 import { Slider } from "./ui/Slider";
 import { usePlayer } from "../hooks/usePlayer";
@@ -149,6 +150,7 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
       </div>
 
       <div className="flex flex-1 items-center justify-end gap-1">
+        <PlaybackOptions />
         <IconButton
           label={lyricsOpen ? t("player.hideLyrics") : t("player.showLyrics")}
           active={lyricsOpen}
@@ -167,13 +169,21 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
         <IconButton label={state.muted ? t("player.unmute") : t("player.mute")} onClick={toggleMute}>
           <VolumeIcon className="size-4" />
         </IconButton>
-        <Slider
-          label={t("player.volume")}
-          className="max-w-[110px]"
-          value={state.muted ? 0 : state.volume}
-          max={1}
-          onChange={setVolume}
-        />
+        <div
+          className="flex w-full max-w-[110px]"
+          onWheel={(event) => {
+            // Scroll over the volume to nudge it, like a hardware knob.
+            const step = event.deltaY < 0 ? 0.05 : -0.05;
+            setVolume(Math.min(1, Math.max(0, state.volume + step)));
+          }}
+        >
+          <Slider
+            label={t("player.volume")}
+            value={state.muted ? 0 : state.volume}
+            max={1}
+            onChange={setVolume}
+          />
+        </div>
       </div>
     </footer>
   );

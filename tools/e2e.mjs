@@ -259,6 +259,91 @@ check(
   (await page.locator("h2", { hasText: "Letra" }).count()) === 0,
 );
 
+// 7b. Queue control: the row's context menu queues a track, the panel edits it.
+const row = page.getByRole("row").filter({ hasText: "Faixa do Backend" }).first();
+await row.click({ button: "right" });
+await page.getByRole("menuitem", { name: "Tocar a seguir" }).waitFor();
+await shot("17-desktop-context-menu");
+await page.getByRole("menuitem", { name: "Tocar a seguir" }).click();
+await page.waitForSelector("text=toca a seguir");
+check("play next confirms with a notice", true);
+await page.waitForSelector("text=A seguir · 1");
+check("the queue lists the queued track", true);
+
+await page.getByRole("button", { name: "Mais opções para Faixa do Backend" }).last().click();
+await page.getByRole("menuitem", { name: "Remover da fila" }).click();
+await page.waitForSelector("text=Nada na sequência");
+check("removing a queued track empties the up-next list", true);
+
+await row.click({ button: "right" });
+await page.getByRole("menuitem", { name: "Adicionar à fila" }).click();
+await page.waitForSelector("text=A seguir · 1");
+await page.getByRole("button", { name: "Limpar fila" }).click();
+await page.waitForSelector("text=Nada na sequência");
+check("clearing the queue keeps only what is playing", true);
+
+// 7c. Playback speed and the sleep timer live next to the volume.
+await page.getByRole("button", { name: /Velocidade de reprodução/ }).click();
+await page.getByRole("menuitemradio", { name: "1.5×" }).click();
+check(
+  "the chosen speed is shown and persisted",
+  (await page.getByRole("button", { name: "Velocidade de reprodução: 1.5×" }).count()) === 1 &&
+    (await page.evaluate(() => JSON.parse(localStorage.getItem("ytm-desktop:preferences")).rate)) === 1.5,
+);
+await page.keyboard.press("]");
+check(
+  "the ] key steps the speed up",
+  (await page.getByRole("button", { name: "Velocidade de reprodução: 2×" }).count()) === 1,
+);
+for (let i = 0; i < 3; i += 1) await page.keyboard.press("[");
+check(
+  "the [ key steps the speed back down to normal",
+  (await page.getByRole("button", { name: "Velocidade de reprodução: 1×" }).count()) === 1,
+);
+
+await page.getByRole("button", { name: "Timer de sono" }).click();
+await page.getByRole("menuitemradio", { name: "15 minutos" }).click();
+await page.waitForFunction(
+  () => /^\d+:\d\d$/.test(document.querySelector('button[aria-label="Timer de sono"] span')?.textContent ?? ""),
+  null,
+  { timeout: 3000 },
+);
+check("a timed sleep shows its countdown", true);
+await shot("18-desktop-sleep-timer");
+await page.getByRole("button", { name: "Timer de sono" }).click();
+await page.getByRole("menuitem", { name: "Desligar o timer" }).click();
+check(
+  "turning the timer off clears it",
+  (await page.locator('button[aria-label="Timer de sono"][aria-pressed="true"]').count()) === 0,
+);
+
+await page.getByRole("button", { name: "Timer de sono" }).click();
+await page.getByRole("menuitemradio", { name: "Ao fim desta faixa" }).click();
+check(
+  "end-of-track arms the timer",
+  (await page.locator('button[aria-label="Timer de sono"][aria-pressed="true"]').count()) === 1,
+);
+await page.getByRole("button", { name: "Timer de sono" }).click();
+await page.getByRole("menuitem", { name: "Desligar o timer" }).click();
+
+// 7d. The shortcut sheet opens from the keyboard and closes with Escape.
+await page.keyboard.press("?");
+await page.getByRole("dialog", { name: "Atalhos de teclado" }).waitFor();
+await shot("19-desktop-shortcuts");
+// Focus lands on the body after a click on plain text; Escape must still close it.
+await page.getByRole("heading", { name: "Atalhos de teclado" }).click();
+await page.keyboard.press("Escape");
+check(
+  "Escape closes the shortcut sheet",
+  (await page.getByRole("dialog").count()) === 0,
+);
+await page.keyboard.press("m");
+check(
+  "global keys keep working after clicking a control",
+  (await page.getByRole("button", { name: "Ativar som" }).count()) === 1,
+);
+await page.keyboard.press("m");
+
 // 8. Downloading a track reaches the backend, and it shows under "Baixados".
 await page.getByRole("button", { name: "Baixar Faixa do Backend" }).first().click();
 await page.waitForFunction(

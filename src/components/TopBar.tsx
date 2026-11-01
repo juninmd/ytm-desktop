@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, ListMusic, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Keyboard, ListMusic, Search, X } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { cn } from "../lib/cn";
 import { useI18n } from "../lib/i18n";
@@ -9,9 +9,10 @@ type Props = {
   onBack: () => void;
   queueOpen: boolean;
   onToggleQueue: () => void;
+  onOpenShortcuts: () => void;
 };
 
-export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue }: Props) {
+export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue, onOpenShortcuts }: Props) {
   const { t } = useI18n();
   return (
     <header className="flex items-center gap-3 px-4 py-3">
@@ -27,6 +28,7 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue 
       <div className="relative w-full max-w-[420px]">
         <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-subtle" />
         <input
+          id="global-search"
           type="search"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
@@ -52,6 +54,13 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue 
         <span className="hidden items-center gap-2 rounded-full border border-line px-3 py-1.5 text-xs text-muted xl:flex">
           {t("top.demo")}
         </span>
+        <IconButton
+          label={t("keys.open")}
+          className="size-9 bg-raised"
+          onClick={onOpenShortcuts}
+        >
+          <Keyboard className="size-4" />
+        </IconButton>
         <IconButton
           label={queueOpen ? t("top.hideQueue") : t("top.showQueue")}
           active={queueOpen}

@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { Check, Clock, Download, Heart, Loader2, Play } from "lucide-react";
+import { Check, Clock, Download, Ellipsis, Heart, ListEnd, ListStart, Loader2, Play } from "lucide-react";
 import { Cover } from "./Cover";
 import { Eq } from "./ui/Eq";
 import { IconButton } from "./ui/IconButton";
+import { anchorFromElement, anchorFromEvent, type MenuAnchor } from "./ui/Menu";
+import { useMenu } from "./ui/useMenu";
 import { usePlayer } from "../hooks/usePlayer";
 import { useCatalog } from "../hooks/useCatalog";
 import { cn } from "../lib/cn";
@@ -12,9 +14,9 @@ import type { Track } from "../types";
 
 const ROW = {
   "with-album":
-    "grid grid-cols-[24px_minmax(0,1fr)_104px] items-center gap-4 xl:grid-cols-[24px_minmax(0,4fr)_minmax(0,3fr)_88px_104px]",
+    "grid grid-cols-[24px_minmax(0,1fr)_144px] items-center gap-4 xl:grid-cols-[24px_minmax(0,4fr)_minmax(0,3fr)_88px_144px]",
   "no-album":
-    "grid grid-cols-[24px_minmax(0,1fr)_104px] items-center gap-4 xl:grid-cols-[24px_minmax(0,4fr)_88px_104px]",
+    "grid grid-cols-[24px_minmax(0,1fr)_144px] items-center gap-4 xl:grid-cols-[24px_minmax(0,4fr)_88px_144px]",
 } as const;
 
 type Props = {
@@ -32,10 +34,11 @@ export function TrackTable({
   showAlbum = true,
   emptyLabel,
 }: Props) {
-  const { play, current, isLiked, toggleLike, state, notify } = usePlayer();
+  const { play, current, isLiked, toggleLike, state, notify, enqueue } = usePlayer();
   const { download, isDownloaded } = useCatalog();
   const { t } = useI18n();
   const [busy, setBusy] = useState<string[]>([]);
+  const menu = useMenu();
   const row = showAlbum ? ROW["with-album"] : ROW["no-album"];
 
   const save = (track: Track) => {
@@ -52,12 +55,40 @@ export function TrackTable({
       .finally(() => setBusy((current) => current.filter((id) => id !== track.id)));
   };
 
+  const openMenu = (track: Track, index: number, anchor: MenuAnchor) => {
+    const liked = isLiked(track.id);
+    menu.show(
+      t("track.more", { title: track.title }),
+      [
+        { id: "play", label: t("menu.play"), icon: <Play className="size-4" />, onSelect: () => play(tracks, index) },
+        { id: "next", label: t("menu.playNext"), icon: <ListStart className="size-4" />, onSelect: () => enqueue([track], "next") },
+        { id: "last", label: t("menu.addToQueue"), icon: <ListEnd className="size-4" />, onSelect: () => enqueue([track], "last") },
+        { id: "divider", separator: true },
+        {
+          id: "like",
+          label: liked ? t("player.unlike") : t("player.like"),
+          icon: <Heart className={cn("size-4", liked && "fill-accent text-accent")} />,
+          onSelect: () => toggleLike(track.id),
+        },
+        {
+          id: "download",
+          label: t("menu.download"),
+          icon: <Download className="size-4" />,
+          disabled: isDownloaded(track.id) || busy.includes(track.id),
+          onSelect: () => save(track),
+        },
+      ],
+      anchor,
+    );
+  };
+
   if (tracks.length === 0) {
     return <p className="px-4 py-10 text-center text-sm text-muted">{emptyLabel ?? t("track.empty")}</p>;
   }
 
   return (
     <div role="table" aria-label={t("track.table")}>
+      {menu.node}
       <div role="row" className={cn(row, "border-b border-line px-4 pb-2 text-xs text-subtle")}>
         <span role="columnheader" className="text-right">
           {t("track.index")}
@@ -86,6 +117,10 @@ export function TrackTable({
               key={track.id}
               role="row"
               onDoubleClick={() => play(tracks, index)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                openMenu(track, index, anchorFromEvent(event));
+              }}
               className={cn(
                 "group rounded-md px-4 py-2 transition-colors hover:bg-white/6",
                 playing && "bg-white/6",
@@ -140,6 +175,14 @@ export function TrackTable({
               </span>
 
               <span role="cell" className="flex items-center justify-end gap-1">
+                <IconButton
+                  label={t("track.more", { title: track.title })}
+                  aria-haspopup="menu"
+                  onClick={(event) => openMenu(track, index, anchorFromElement(event.currentTarget, "down", "end"))}
+                  className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                >
+                  <Ellipsis className="size-4" />
+                </IconButton>
                 <IconButton
                   label={
                     saved
