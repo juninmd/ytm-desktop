@@ -1,279 +1,445 @@
+<div align="center">
+
+<img src=".github/assets/icon.svg" alt="" width="96" height="96" />
+
 # YTM Desktop
 
-A YouTube Music desktop client prototype — **Tauri 2 + React 19 + Tailwind 4** — built around the
-interaction model people already have in their fingers from Spotify.
+**Cliente desktop de YouTube Music para quem já vive no modelo do Spotify.**<br/>
+Tauri 2 + React 19: catálogo e áudio reais no app; no navegador, um catálogo simulado para revisão offline.
 
-The point of the project is the surface **plus a real engine behind it**: a dense three-pane desktop
-shell, a real transport, a queue, an honest sign-in flow — and, on the desktop build, the actual
-YouTube Music catalogue and real streaming audio. Authentication, the catalogue client and the
-stream resolver are all implemented end to end in Rust; the browser preview falls back to a bundled
-mock catalogue so the UI can be reviewed offline.
+[![CI](https://github.com/juninmd/ytm-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/juninmd/ytm-desktop/actions/workflows/ci.yml)
+[![Security Scan](https://github.com/juninmd/ytm-desktop/actions/workflows/security.yml/badge.svg)](https://github.com/juninmd/ytm-desktop/actions/workflows/security.yml)
+[![License](https://img.shields.io/github/license/juninmd/ytm-desktop)](LICENSE)
 
-![Sign-in](docs/screenshots/01-signin.png)
+<br/>
 
-| | |
+<img src=".github/assets/screenshots/home.png" alt="Tela principal em modo demonstração: barra lateral com a biblioteca, carrosséis de álbuns e playlists e barra de reprodução na base" width="860" />
+
+</div>
+
+Cliente desktop de YouTube Music (protótipo) em **Tauri 2 + React 19 + Tailwind 4**, para quem já tem
+no dedo o modelo de interação do Spotify: shell denso de três painéis, player com fila, busca,
+biblioteca e letras. No app desktop, o catálogo e o áudio são reais (InnerTube + `yt-dlp`, ambos
+implementados em Rust); no navegador, a interface cai para um catálogo simulado embutido, para ser
+revisada offline e sem credenciais.
+
+## Índice
+
+- [Funcionalidades](#funcionalidades)
+- [O que é real e o que não é](#o-que-é-real-e-o-que-não-é)
+- [Arquitetura](#arquitetura)
+- [Requisitos](#requisitos)
+- [Instalação](#instalação)
+- [Configuração](#configuração)
+- [Uso](#uso)
+- [Atalhos de teclado](#atalhos-de-teclado)
+- [Testes, lint e build](#testes-lint-e-build)
+- [Gates de CI](#gates-de-ci)
+- [Estrutura do projeto](#estrutura-do-projeto)
+- [Screenshots](#screenshots)
+- [Terminal](#terminal)
+- [Notas de design](#notas-de-design)
+- [Acessibilidade](#acessibilidade)
+- [Advisories conhecidos](#advisories-conhecidos)
+- [Segurança](#segurança)
+- [Limitações conhecidas](#limitações-conhecidas)
+- [Documentação](#documentação)
+- [Contribuição](#contribuição)
+- [Licença](#licença)
+
+## Funcionalidades
+
+- Player com fila, shuffle, repetição e volume; máquina de estados em um único reducer.
+- Áudio real: cada faixa é resolvida por `yt-dlp` em uma URL de stream, com cache até expirar e
+  prefetch da próxima faixa.
+- Catálogo YouTube Music (home, busca, álbuns, playlists e páginas de artista) sem precisar de conta.
+- Busca com as abas do player web (músicas, álbuns, artistas, playlists).
+- Autoplay/rádio: ao fim da fila, o rádio da faixa a continua (configurável na fila).
+- Biblioteca pessoal (playlists, músicas curtidas, álbuns salvos) ao conectar o cookie do navegador.
+- Curtir faixa com escrita na conta (otimista, com rollback); apenas local sem a biblioteca conectada.
+- Letras sincronizadas estilo karaokê via [LRCLIB](https://lrclib.net), com texto simples do YouTube
+  Music como fallback.
+- Downloads offline com `yt-dlp`, tocados do disco pelo protocolo `asset`.
+- Mídia em segundo plano e teclas de mídia pela Media Session API.
+- Sessão restaurada **pausada** na próxima abertura (fila, faixa atual e posição).
+- Interface bilíngue (pt-BR / inglês); a troca também muda o idioma dos dados do catálogo (`hl`).
+- Login por OAuth 2.0 Device Flow no Rust; sair revoga a concessão.
+- Fila editável: *Tocar a seguir*, *Adicionar à fila*, remover, reordenar (arrastando ou pelo menu),
+  *Limpar fila* e *Ir para o álbum/artista*, por um menu de clique direito em qualquer faixa.
+- Timer de sono (5 a 60 min com fade de 10 s, ou ao fim da faixa) e velocidade de 0,5× a 2× com tom
+  preservado.
+- Transição sem pausas (gapless) e crossfade de 3 a 12 s entre faixas.
+- Modo mini (protótipo): a janela encolhe para uma faixa de 420×150, fixável acima das outras, com
+  lista "a seguir" opcional e controles que podem esconder até passar o mouse.
+- Letra em modo cinema (`c`): a letra sincronizada em tela cheia, com a linha atual ampliada.
+- Detalhes da faixa, selo de disponível offline e atalhos de teclado visíveis nas dicas dos controles.
+
+## O que é real e o que não é
+
+| Área | Status |
 |---|---|
-| ![Home](docs/screenshots/03-home.png) | ![Now playing](docs/screenshots/04-playing-queue.png) |
-| ![Album](docs/screenshots/05-album.png) | ![Library](docs/screenshots/06-library.png) |
-| ![Device code](docs/screenshots/02-device-code.png) | ![Search](docs/screenshots/07-search.png) |
+| Transporte, fila, shuffle, repetição, volume | Máquina de estados real; no desktop dirige um `<audio>` real |
+| Áudio | **Real**: cada faixa é resolvida por `yt-dlp` em um stream tocável |
+| Mídia em segundo plano e teclas de mídia | **Real**: a Media Session API alimenta o overlay do SO e as teclas |
+| Catálogo (home, busca, álbum/playlist) | **Real** (InnerTube) no desktop; o preview filtra um catálogo simulado embutido |
+| Capas | Thumbnails reais quando a resposta traz; senão, uma capa gerada a partir de hash |
+| Busca | **Real** no desktop, com as abas de resultado do player web |
+| Páginas de artista | **Real**: nome, músicas principais e as linhas do artista |
+| Autoplay / rádio | **Real**: ao fim da fila o rádio da faixa continua (liga/desliga na fila) |
+| Cache de stream | URLs resolvidas ficam em cache até expirar; a próxima faixa é pré-buscada |
+| Downloads offline | **Real**: a faixa é salva em disco com `yt-dlp` e tocada do arquivo, sem rede |
+| Sessão | Fila, faixa atual e posição são restauradas **pausadas** na próxima abertura |
+| Idioma | Interface bilíngue (pt-BR / inglês); a troca também muda o idioma do catálogo (`hl`) |
+| Login | **Real**: OAuth 2.0 Device Flow no Rust contra o Google; sair revoga a concessão |
+| Biblioteca pessoal | **Real** com o cookie do navegador conectado: o InnerTube exige `Cookie` + `SAPISIDHASH`, não bearer token |
+| Curtir | **Real** com a biblioteca conectada (otimista, com rollback); só local sem ela |
+| Letras | **Real**, sincronizadas via LRCLIB (linha atual destacada, clique para buscar); sem tempo, usa o texto oficial do YouTube Music. Abrir o painel envia artista/título/álbum ao LRCLIB; nada é enviado com o painel fechado e nada é persistido |
+| Fila editável | **Real**: tocar a seguir, adicionar, remover, reordenar, limpar e pular, pelo menu de contexto e pelo painel da fila; a sessão é salva **em ordem de reprodução**, então edições e shuffle sobrevivem ao reinício |
+| Velocidade | **Real**: 0,5× a 2× no elemento de áudio com tom preservado, lembrada entre aberturas |
+| Timer de sono | **Real**: 5 a 60 min (o volume some nos últimos 10 s) ou *ao fim desta faixa*, imposto no reducer |
+| Gapless e crossfade | **Real**: a próxima faixa é resolvida e carregada num segundo `<audio>`, sem pausa na troca; com crossfade de 3 a 12 s os dois se sobrepõem em curva de potência igual. Pausar, buscar ou pular durante a sobreposição a cancela ou a adota sem falha. Não vale para repetir uma faixa, parada do timer de sono ou faixa ainda não carregada |
+| Letra em cinema | **Real**: a letra sincronizada como palco em janela cheia (capa grande, linha atual ampliada, fundo desfocado da capa, clique para buscar), com tela cheia |
+| Detalhes da faixa | **Real**: o que o catálogo informa (artista, álbum, ano, duração, reproduções) e o tamanho offline; campo que o catálogo não trouxe é omitido, nunca inventado |
+| Modo mini | **Protótipo**: a janela nativa encolhe para 420×150 (fixável acima das outras), volta ao tamanho e à posição anteriores e reabre onde foi deixada, se o ponto ainda estiver num monitor conectado. Verificado na janela real: `1320×860 → 420×150 → 1320×860`. `Ctrl Shift M` |
+| Armazenamento de token/cookie | Cofre de credenciais do SO via `keyring` (Windows Credential Manager / Keychain / Secret Service) |
+| Preview no navegador (`npm run dev`) | Catálogo simulado + transporte simulado, rotulados como tal na interface |
 
-And the same UI inside the actual Tauri window on Windows — not a browser tab:
+## Arquitetura
 
-![Native window](docs/screenshots/09-native-window.png)
+```mermaid
+flowchart LR
+  subgraph Webview["Webview (React, src/)"]
+    App["App.tsx"] --> Hooks["hooks/<br/>usePlayer, useCatalog, useAuth"]
+    Hooks --> LibMusic["lib/music.ts"]
+    Hooks --> LibAuth["lib/auth.ts"]
+  end
+  subgraph Rust["Backend Rust (src-tauri/src/)"]
+    Inner["innertube.rs"]
+    Stream["stream.rs"]
+    Auth["auth.rs"]
+    Down["downloads.rs"]
+    Lyrics["lyrics.rs"]
+    Cookies["browser_cookies.rs"]
+  end
+  LibMusic -- "invoke (IPC)" --> Inner
+  LibMusic -- "invoke (IPC)" --> Stream
+  LibMusic -- "invoke (IPC)" --> Down
+  LibMusic -- "invoke (IPC)" --> Lyrics
+  LibAuth -- "invoke (IPC)" --> Auth
+  LibAuth -- "invoke (IPC)" --> Cookies
+  Inner --> YTM[("YouTube Music<br/>InnerTube")]
+  Stream --> YTDLP[["yt-dlp"]]
+  Down --> YTDLP
+  Cookies --> YTDLP
+  Lyrics --> LRCLIB[("LRCLIB")]
+  Auth --> Google[("Google OAuth<br/>Device Flow")]
+  Auth --> Vault[("Cofre do SO<br/>keyring")]
+```
 
-## What is real and what is not
+No navegador (`npm run dev`), `lib/music.ts` e `lib/auth.ts` trocam o IPC por versões simuladas
+(`data/catalog.ts`), e nada acima do Rust é exercitado.
 
-| Area | Status |
-|---|---|
-| Playback transport, queue, shuffle, repeat, volume | Real state machine; drives a real `<audio>` sink on desktop |
-| Audio | **Real** — each track is resolved through `yt-dlp` to a playable stream |
-| Background playback & media keys | **Real** — the Media Session API feeds the OS media overlay and hardware keys |
-| Catalogue (home, search, album/playlist pages) | **Real** YouTube Music (InnerTube) on desktop; the preview filters a bundled mock |
-| Artwork | Real thumbnails when the response carries them, else a generated sleeve from a hash |
-| Search | **Real** catalogue search on desktop, with the web player's result tabs (songs, albums, artists, playlists) |
-| Artist pages | **Real** — name, top songs and the artist's rows, from the catalogue |
-| Autoplay / radio | **Real** — when the queue ends, the track's radio continues it (toggleable in the queue) |
-| Stream cache | Resolved urls are cached until they expire; the next track is prefetched |
-| Offline downloads | **Real** — a track is saved to disk with `yt-dlp` and played from the file (asset protocol), so it works without a network |
-| Queue control | **Real** — *Play next*, *Add to queue*, remove, reorder and *Clear queue*, from a right-click menu on any track row and from the queue panel; the queue is saved in play order, so edits and shuffle survive a restart |
-| Gapless & crossfade | **Real** — the next track is resolved and buffered on a second audio element, so the change has no gap; with a crossfade of 3–12 s the two overlap on an equal-power curve (pause, seek or a manual skip during the overlap cancels or adopts it cleanly). Not applied to a repeated track, a sleep-timer stop, or a track that is not buffered yet |
-| Lyrics cinema | **Real** — the synchronised lyrics as a full-window stage (big artwork, current line enlarged, blurred cover wash, click a line to seek), with fullscreen. `c` or the button in the lyrics panel |
-| Track details | **Real** — what the catalogue knows about a track (artist, album, year, duration, plays) plus its offline size; fields the catalogue did not supply are left out |
-| Mini mode | **Prototype** — the workspace collapses into a 420×150 strip (artwork, seek bar, transport, like, volume; an optional up-next list opens below it, and the controls can hide until you hover) and the native window shrinks to match, stays above other windows while pinned (toggle in the strip), and returns to its exact previous size and position. Checked against the real window: 1320×860 → 420×150 → 1320×860, same screen position `Ctrl Shift M` or the button in the top bar |
-| Playback speed | **Real** — 0.5× to 2× on the audio element with pitch preserved, remembered between launches |
-| Sleep timer | **Real** — 5 to 60 minutes (the volume eases out over the last 10 s) or *at the end of this track* |
-| Session | The queue, current track and playhead are restored **paused** on the next launch |
-| Language | The whole interface is bilingual (pt-BR / English), and the switch also changes the catalogue's data language (`hl`) |
-| Sign-in | **Real** OAuth 2.0 device flow in Rust against Google; sign-out revokes the grant |
-| Personal library (playlists, liked songs, saved albums) | **Real**, once the browser cookie is connected — InnerTube needs `Cookie` + `SAPISIDHASH`, not a bearer token |
-| Liking a track | **Real** — writes through to the account when the library is connected (optimistic, with rollback); local-only otherwise |
-| Lyrics | **Real** karaoke — synchronised lines from [LRCLIB](https://lrclib.net) (current line highlighted, click to seek); falls back to the official plain text from YouTube Music when no timing exists. Opening the panel sends the track's artist/title/album to LRCLIB; nothing is sent while it is closed, and nothing is persisted |
-| Token / cookie storage | Real OS credential vault (`keyring`: Windows Credential Manager / Keychain / Secret Service) |
-| Browser preview (`npm run dev`) | Mock catalogue + simulated transport, labelled as such in the UI |
+- **Catálogo**: `src-tauri/src/innertube.rs` fala com a API InnerTube `WEB_REMIX` do YouTube Music
+  (`/youtubei/v1/search`, `/browse`). Home, busca e páginas de álbum/playlist são extraídas da árvore
+  de renderers e entregues ao webview como JSON simples. Busca e navegação funcionam **sem conta**.
+- **Áudio**: `src-tauri/src/stream.rs` transforma o `videoId` em uma URL direta de tempo limitado via
+  `yt-dlp`. O `<audio>` do webview a consome com range requests; os eventos `timeupdate` / `ended`
+  alimentam o mesmo reducer que o transporte simulado usa.
+- **Biblioteca pessoal**: além do cookie, exige um `SAPISIDHASH` por requisição. É o único ponto que
+  pede algo ao usuário: cole o header `Cookie` de uma aba autenticada de `music.youtube.com` na tela
+  **Biblioteca**. Ele é guardado só no cofre do SO, pelo Rust, e nunca entra no `localStorage`.
+- **Autenticação**: detalhes em [docs/authentication.md](docs/authentication.md) (em inglês). O
+  refresh token é escrito só pelo Rust, só no cofre do SO; nunca entra no webview. A construção do
+  `SAPISIDHASH` está em `src-tauri/src/auth.rs`.
 
-## Stack
+## Requisitos
 
-- **Tauri 2** — Rust backend, ~8 MB release binary, no bundled Chromium (uses the system WebView2)
-- **React 19** + **TypeScript 6** (strict) — no router, no state library, one reducer for playback
-- **Tailwind 4** — CSS-first `@theme` tokens, Vite plugin
-- **lucide-react** — icons
-- **reqwest / sha1 / keyring** — the Rust side
+- Node.js 24 (versão usada no CI) e npm.
+- Rust estável (com `rustfmt` e `clippy`) e os pré-requisitos do Tauri 2 para o seu SO (no Windows,
+  WebView2).
+- [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) no `PATH` para áudio real e downloads:
 
-## Getting started
+  ```powershell
+  winget install yt-dlp.yt-dlp   # ou: pipx install yt-dlp
+  ```
+
+  O resolvedor procura `$YTM_YTDLP`, depois um binário `yt-dlp` ao lado do app, depois o `PATH`.
+  Se não achar, o player mostra `simulado` na barra de reprodução e cai para o transporte simulado em
+  vez de falhar: nada é falsificado em silêncio.
+
+## Instalação
 
 ```bash
 npm install
+```
 
-# 1. Review the UI in a browser (mock catalogue, simulated audio)
+## Configuração
+
+Só o app desktop fala com o Google e o YouTube. Para o login real é preciso o seu próprio cliente
+OAuth do tipo *TVs and Limited Input devices*, informado por variáveis de ambiente (nunca
+commitadas):
+
+| Variável | Para quê |
+|---|---|
+| `YTM_GOOGLE_CLIENT_ID` | ID do cliente OAuth do Device Flow |
+| `YTM_GOOGLE_CLIENT_SECRET` | Segredo do cliente OAuth do Device Flow |
+| `YTM_YTDLP` | Caminho opcional para o binário `yt-dlp` |
+| `YTM_LIVE` | `1` liga os testes Rust que acessam os serviços reais (opt-in) |
+
+Sem as duas primeiras, a tela de login informa exatamente o que falta, em vez de falhar em silêncio.
+
+## Uso
+
+**1. Revisar a interface no navegador** (catálogo e áudio simulados, sem credenciais):
+
+```bash
 npm run dev
+```
 
-# 2. Run the real desktop app
+Sobe o Vite; a interface rotula o catálogo e o transporte como simulados. Saída não verificada.
+
+**2. Rodar o app desktop real:**
+
+```powershell
+$env:YTM_GOOGLE_CLIENT_ID     = "<seu-client-id>"
+$env:YTM_GOOGLE_CLIENT_SECRET = "<seu-client-secret>"
 npm run tauri dev
+```
 
-# Production build
+Abre a janela nativa 1320x860 com catálogo e áudio reais. Saída não verificada (exige conta Google e
+cliente OAuth).
+
+**3. Build de produção:**
+
+```bash
 npm run build && npm run tauri build
 ```
 
-Only the desktop build talks to Google and to YouTube. In the browser the catalogue and auth
-backends are swapped for simulated ones so the flow can be reviewed without credentials — the
-screen itself says so.
+Saída do passo `npm run build` (verificada), seguida do bundle do Tauri:
 
-### Real audio needs yt-dlp
-
-The desktop player streams real audio, which it resolves per track through
-[`yt-dlp`](https://github.com/yt-dlp/yt-dlp). Install it and make sure it is on `PATH`:
-
-```powershell
-winget install yt-dlp.yt-dlp   # or: pipx install yt-dlp
+```text
+dist/index.html                   0.52 kB │ gzip:  0.32 kB
+dist/assets/index-B73SWWtQ.css   33.77 kB │ gzip:  7.35 kB
+dist/assets/index-DQ5WQ64e.js   331.46 kB │ gzip: 99.27 kB
+✓ built in 816ms
 ```
 
-The resolver looks for `$YTM_YTDLP` first, then a `yt-dlp` binary next to the app, then `PATH`. When
-none is found the player reports `simulado` on the now-playing bar and falls back to the simulated
-transport instead of failing — nothing is silently faked.
-
-## Catalogue and playback
-
-Two private surfaces carry the real product, and both are implemented in Rust:
-
-- **Catalogue** — `src-tauri/src/innertube.rs` speaks to YouTube Music's `WEB_REMIX` InnerTube API
-  (`/youtubei/v1/search`, `/browse`). Home, search and album/playlist pages are parsed from the
-  renderer tree and handed to the webview as plain JSON. Search and browsing work **without an
-  account**.
-- **Audio** — `src-tauri/src/stream.rs` turns a track's `videoId` into a time-limited, directly
-  playable url through `yt-dlp`. The webview's `<audio>` element streams it with range requests; the
-  player's `timeupdate` / `ended` events drive the same reducer the simulated transport uses.
-
-The personal library (liked songs, playlists, saved albums) additionally needs the browser cookie
-plus a per-request `SAPISIDHASH` digest. That is the one seam that asks something of you: paste the
-`Cookie` header from an authenticated `music.youtube.com` tab on the **Biblioteca** screen. It is
-stored only in the OS vault, by Rust, and never enters `localStorage`.
-
-## Authentication
-
-The full write-up is in **[docs/authentication.md](docs/authentication.md)**. The short version:
-
-- The app uses Google's **OAuth 2.0 Device Authorization Grant**. You get a short code, approve it on
-  `google.com/device`, and the app polls for a token. No password is ever typed into the app and no
-  embedded browser is needed.
-- The **refresh token is written only from Rust**, only into the OS credential vault. It never enters
-  the webview and never touches `localStorage`.
-- The private YouTube Music (InnerTube) endpoints that carry the real library do **not** accept a
-  bearer token. They want a browser cookie plus a per-request `SAPISIDHASH` digest. That construction
-  lives in `src-tauri/src/auth.rs` and is wired into the catalogue client (`src-tauri/src/innertube.rs`)
-  for the personal library — see the trade-offs table in the write-up.
-
-To run the real flow you need your own OAuth client of type *TVs and Limited Input devices*:
-
-```powershell
-$env:YTM_GOOGLE_CLIENT_ID     = "000000000000-xxxx.apps.googleusercontent.com"
-$env:YTM_GOOGLE_CLIENT_SECRET = "GOCSPX-xxxx"
-npm run tauri dev
-```
-
-Without them the sign-in screen reports exactly what is missing instead of failing silently. Neither
-value is ever committed.
-
-## Keyboard
-
-`?` (or the keyboard button in the top bar) opens the full list in the app.
-
-| Key | Action |
-|---|---|
-| `Space` | Play / pause |
-| `←` `→` | Seek ∓5 s |
-| `↑` `↓` | Volume ±5 % (the wheel over the volume bar does the same) |
-| `n` / `p`, `Ctrl` `→` / `←` | Next / previous track |
-| `m` | Mute |
-| `l` or `Alt` `Shift` `B` | Like the current track |
-| `s` / `r` | Shuffle / cycle repeat |
-| `[` / `]` | Slower / faster |
-| `q` or `Alt` `Shift` `Q` / `y` | Show or hide the queue / the lyrics |
-| `/` or `Ctrl` `K` / `Ctrl` `L` | Go to search |
-| `c` | Lyrics in cinema mode |
-| `Ctrl` `Shift` `M` | Toggle mini mode |
-
-Shortcuts show in the tooltips of the controls they drive. Ignored while typing in a field. A focused button keeps `Space` and `Enter`, and a focused slider keeps
-the arrow keys, so the rest of the map keeps working after you click a control.
-
-![Mini mode](docs/screenshots/20-desktop-mini-mode.png)
-
-| | |
-|---|---|
-| ![Mini mode with the up-next list](docs/screenshots/21-desktop-mini-queue.png) | ![Lyrics cinema](docs/screenshots/22-desktop-lyrics-cinema.png) |
-
-![Context menu](docs/screenshots/17-desktop-context-menu.png)
-
-| | |
-|---|---|
-| ![Sleep timer](docs/screenshots/18-desktop-sleep-timer.png) | ![Shortcuts](docs/screenshots/19-desktop-shortcuts.png) |
-
-## Project structure
-
-```
-src/
-  App.tsx                  shell: auth gate, view routing, keyboard shortcuts
-  types.ts                 domain model, no React
-  data/catalog.ts          bundled mock catalogue (browser preview only)
-  hooks/useCatalog.tsx     catalogue store: real InnerTube or the mock
-  hooks/playerReducer.ts   pure playback state machine (unit-tested)
-  hooks/usePlayer.tsx      reducer + the real <audio> sink + Media Session
-  hooks/useSleepTimer.ts   countdown with a volume fade, or "end of track"
-  hooks/useLyrics.ts       lyrics of the playing track + active line (panel and cinema share it)
-  hooks/useMiniMode.ts     mini mode state + native window resize/restore (lib/miniWindow.ts)
-  hooks/useShortcuts.ts    binds the keyboard map (lib/shortcuts.ts) once
-  hooks/useAuth.tsx        device-flow state machine
-  hooks/usePlayCollection.ts
-  lib/auth.ts              Tauri IPC boundary + browser fallback
-  lib/music.ts             catalogue/stream/rate IPC boundary + browser fallback
-  lib/catalog.ts           pure catalogue merge (unit-tested)
-  lib/shortcuts.ts         key -> command table; also drives the in-app help sheet
-  lib/crossfade.ts         overlap curves and the start rule (unit-tested)
-  lib/sleepTimer.ts        pure timer maths (unit-tested)
-  lib/i18n.tsx             bilingual interface (pt-BR / English)
-  lib/cover.ts             deterministic artwork from a hash
-  components/              Sidebar, TopBar, HomeView, CollectionView,
-                           TrackTable, PlayerBar, QueuePanel, SignInScreen,
-                           LibraryCookieForm, LyricsPanel, DownloadsView,
-                           PlaybackOptions (speed, sleep, transition), MiniPlayer, LyricsCinema, TrackInfoDialog,
-                           ShortcutsDialog, ui/Menu, ui/Modal
-src-tauri/src/
-  auth.rs                  device flow, token + cookie vault, SAPISIDHASH signing
-  innertube.rs             real YouTube Music catalogue client (search/browse/home/library/rate)
-  browser_cookies.rs       reads the browser cookie store through yt-dlp
-  lyrics.rs                timed lyrics (LRCLIB) with a plain-text fallback
-  downloads.rs             offline downloads (yt-dlp to disk + an index)
-  stream.rs                real audio resolution via yt-dlp
-tools/screenshots.mjs      Playwright harness that produced the preview images
-tools/e2e.mjs              Playwright harness for the desktop UI (stubbed backend)
-vitest.config.ts           unit-test config
-```
-
-## Design notes
-
-Declared before the first component was written, and worth stating because the brief was "inspired by
-Spotify":
-
-> High-density desktop product UI for people who already live in Spotify. Dark shell, one warm
-> YouTube-red accent (`#ff3d5a`), generated rather than photographic surfaces.
-> Dials: **variance 4 / motion 4 / density 7**.
-
-Deliberately excluded: purple hero gradients, glassmorphism on every surface, pill-shaped everything,
-cream backgrounds, italic accent words. The accent appears only where it earns attention — brand mark,
-active navigation, play affordances, the current track, liked hearts.
-
-Artwork is a deterministic mesh gradient derived from the release id, overlaid with a faint grid so the
-flat gradients read as printed sleeves. Same input, same sleeve, on every launch, with no binary assets
-and no network dependency.
-
-## Verification
+**4. Testes unitários:**
 
 ```bash
-npm run build        # tsc --strict + vite build
-npm test             # Vitest: the playback reducer and the catalogue merge
-cd src-tauri && cargo test --lib
-
-# Browser-facing: needs a served build and Playwright's Chromium.
-npm run preview &
-npm run screenshots  # 01-08, mock preview; fails on any console error
-npm run e2e          # desktop-mode UI against a stubbed Rust backend
+npm test
 ```
 
-The Rust suite is offline and deterministic. Two tests additionally exercise the **live** service —
-real search/browse/home against InnerTube, and a real audio url through yt-dlp. They are opt-in so
-CI stays hermetic:
+```text
+ Test Files  2 passed (2)
+      Tests  31 passed (31)
+```
+
+## Atalhos de teclado
+
+`?` (ou o botão de teclado na barra superior) abre a lista completa no app. Os atalhos também aparecem
+nas dicas dos controles.
+
+| Tecla | Ação |
+|---|---|
+| `Espaço` | Tocar / pausar |
+| `←` `→` | Voltar / avançar 5 s |
+| `↑` `↓` | Volume ±5 % (a roda do mouse sobre o volume faz o mesmo) |
+| `n` / `p`, `Ctrl` `→` / `←` | Próxima / faixa anterior |
+| `m` | Mudo |
+| `l` ou `Alt` `Shift` `B` | Curtir a faixa atual |
+| `s` / `r` | Embaralhar / alternar repetição |
+| `[` / `]` | Mais lento / mais rápido |
+| `q` ou `Alt` `Shift` `Q` | Mostrar ou ocultar a fila (no modo mini, a lista da faixa) |
+| `y` / `c` | Letra no painel / letra em modo cinema |
+| `/`, `Ctrl` `K` ou `Ctrl` `L` | Ir para a busca |
+| `Ctrl` `Shift` `M` | Alternar o modo mini |
+
+Ignorados enquanto você digita em um campo. Um botão com foco mantém `Espaço` e `Enter`, e um slider
+com foco mantém as setas, então o resto do mapa continua valendo depois de clicar num controle. Com um
+menu ou diálogo aberto, os atalhos globais ficam de lado.
+
+## Testes, lint e build
+
+```bash
+npm run build                                   # tsc (strict) + vite build
+npm test                                        # Vitest: reducer, fila, crossfade, atalhos, timer e merge do catálogo
+cargo fmt --check --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D clippy::all
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+
+# Voltados ao navegador: exigem build servido e o Chromium do Playwright.
+npx playwright install chromium
+npm run preview &   # porta 4173
+npm run screenshots # 01-08, preview simulado; falha em qualquer erro de console
+npm run e2e         # UI em modo desktop contra um backend Rust simulado
+```
+
+Não há linter JS/TS separado: o `tsc --strict` do build cobre a tipagem, e `rustfmt` + `clippy` cobrem
+o Rust. A suíte Rust é offline e determinística. Dois testes exercitam o serviço **real** (busca,
+browse e home no InnerTube; uma URL de áudio real via `yt-dlp`) e são opt-in para o CI continuar
+hermético:
 
 ```bash
 cd src-tauri && YTM_LIVE=1 cargo test --lib
 ```
 
-`tools/screenshots.mjs` produces `01`–`08` against the production build and exits non-zero on any
-console error. `tools/e2e.mjs` injects a fake `__TAURI_INTERNALS__.invoke` before the app loads, so
-`isDesktop()` is true and the **desktop-only** UI runs against a stub: it asserts the real catalogue
-renders, the missing-yt-dlp banner appears, the connected library loads, search returns backend
-tracks, and a like reaches `music_rate`; it also drives the context menu, queue edits, speed, sleep
-timer and the shortcut sheet. It writes `10`–`22`. `09-native-window.png` is a one-off
-capture of the running binary (`cargo build`, then `PrintWindow` against the window), which is why it
-shows real window chrome.
+`tools/screenshots.mjs` gera `01` a `08` contra o build de produção e sai com erro em qualquer erro de
+console. `tools/e2e.mjs` injeta um `__TAURI_INTERNALS__.invoke` falso antes de o app carregar, então
+`isDesktop()` é verdadeiro e a UI **exclusiva do desktop** roda contra um stub: afirma que o
+catálogo real renderiza, que o banner de `yt-dlp` ausente aparece, que a biblioteca conectada carrega,
+que a busca devolve faixas do backend e que um like chega a `music_rate`. Também exercita o menu de contexto, a fila, a velocidade, o timer de sono, o crossfade, os detalhes, o
+cinema da letra, o modo mini e os atalhos. Gera `10` a `22`.
+`09-native-window.png` é uma captura avulsa do binário em execução (`cargo build`, depois
+`PrintWindow` na janela), por isso mostra a moldura real da janela.
 
-## Accessibility
+## Gates de CI
 
-Semantic roles on the track table, `aria-label` on every icon-only control, one visible focus ring for
-the whole app, `aria-live` announcements on track change, `prefers-reduced-motion` honoured, and
-keyboard reachability for both actions on each card. Contrast targets WCAG AA on body text and
-controls.
+| Workflow | O que checa |
+|---|---|
+| `ci.yml` (`verify`, Windows) | `npm ci`, `npm run build` (tsc + vite), `npm test` (Vitest), e2e com backend simulado, `cargo fmt --check`, `cargo clippy -D clippy::all`, `cargo test --lib` |
+| `security.yml` | Varredura de segurança pelo workflow reutilizável `juninmd/base-actions` (push em `main`, semanal e manual) |
 
-## Known advisories
+## Estrutura do projeto
 
-Dependabot reports one moderate advisory against the lockfile, accepted rather than ignored:
+```text
+src/
+  App.tsx                  shell: gate de auth, roteamento de views, atalhos
+  types.ts                 modelo de domínio, sem React
+  data/catalog.ts          catálogo simulado embutido (só no preview do navegador)
+  hooks/useCatalog.tsx     store do catálogo: InnerTube real ou o simulado
+  hooks/playerReducer.ts   máquina de estados pura do player (testada)
+  hooks/usePlayer.tsx      reducer + sink <audio> real (com gapless/crossfade) + Media Session
+  hooks/useSleepTimer.ts   contagem com fade de volume, ou "ao fim da faixa"
+  hooks/useShortcuts.ts    liga o mapa de teclado (lib/shortcuts.ts) uma única vez
+  hooks/useMiniMode.ts     estado do modo mini + redimensionar/restaurar a janela nativa
+  hooks/useLyrics.ts       letra da faixa atual + linha ativa (painel e cinema compartilham)
+  hooks/useAuth.tsx        máquina de estados do device flow
+  hooks/usePlayCollection.ts
+  lib/auth.ts              fronteira IPC do Tauri + fallback de navegador
+  lib/music.ts             fronteira IPC de catálogo/stream/rate + fallback de navegador
+  lib/catalog.ts           merge puro de catálogo (testado)
+  lib/i18n.tsx             interface bilíngue (pt-BR / inglês)
+  lib/cover.ts             capa determinística a partir de hash
+  lib/shortcuts.ts         tabela tecla -> comando; também alimenta a ajuda no app
+  lib/crossfade.ts         curvas de sobreposição e regra de início (testado)
+  lib/sleepTimer.ts        contas do timer (testado)
+  lib/miniWindow.ts        redimensiona/restaura a janela nativa no modo mini
+  components/              Sidebar, TopBar, HomeView, CollectionView, ArtistView, SearchView,
+                           LibraryView, TrackTable, PlayerBar, QueuePanel, SignInScreen,
+                           LibraryCookieForm, LyricsPanel, LyricsCinema, DownloadsView,
+                           PlaybackOptions (velocidade, sono, transição), MiniPlayer,
+                           TrackInfoDialog, ShortcutsDialog, ui/Menu, ui/Modal
+src-tauri/src/
+  auth.rs                  device flow, cofre de token e cookie, assinatura SAPISIDHASH
+  innertube.rs             cliente real do catálogo (search/browse/home/library/rate)
+  browser_cookies.rs       lê o cookie store do navegador via yt-dlp
+  lyrics.rs                letras sincronizadas (LRCLIB) com fallback em texto simples
+  downloads.rs             downloads offline (yt-dlp para disco + índice)
+  stream.rs                resolução de áudio real via yt-dlp
+tools/screenshots.mjs      harness Playwright que gerou as imagens de preview
+tools/e2e.mjs              harness Playwright da UI desktop (backend simulado)
+vitest.config.ts           configuração dos testes unitários
+```
 
-| Crate | Advisory | Why it cannot be fixed here |
+Stack: **Tauri 2** (backend Rust, binário de release de ~8 MB, sem Chromium embutido: usa o WebView2 do
+sistema), **React 19** + **TypeScript 6** (strict, sem router nem biblioteca de estado), **Tailwind 4**
+(tokens `@theme` CSS-first, plugin do Vite), **lucide-react** (ícones) e `reqwest` / `sha1` /
+`keyring` no lado Rust.
+
+## Screenshots
+
+Preview no navegador (catálogo simulado):
+
+| | |
+|---|---|
+| ![Login](docs/screenshots/01-signin.png)<br/>**Login** · entrada com Google ou modo demonstração | ![Código do dispositivo](docs/screenshots/02-device-code.png)<br/>**Código do dispositivo** · fluxo de login no preview |
+| ![Home](docs/screenshots/03-home.png)<br/>**Início** · carrosséis de álbuns e playlists | ![Tocando e fila](docs/screenshots/04-playing-queue.png)<br/>**Tocando e fila** · faixa atual e próximas |
+| ![Álbum](docs/screenshots/05-album.png)<br/>**Álbum** · página de álbum | ![Biblioteca](docs/screenshots/06-library.png)<br/>**Biblioteca** · coleção do usuário |
+| ![Busca](docs/screenshots/07-search.png)<br/>**Busca** · resultados por aba | ![Menu de contexto](docs/screenshots/17-desktop-context-menu.png)<br/>**Menu de contexto** · fila, álbum, detalhes |
+| ![Timer de sono](docs/screenshots/18-desktop-sleep-timer.png)<br/>**Timer de sono** · contagem regressiva | ![Atalhos](docs/screenshots/19-desktop-shortcuts.png)<br/>**Atalhos** · lista completa no app |
+| ![Modo mini](docs/screenshots/20-desktop-mini-mode.png)<br/>**Modo mini** · faixa de 420×150 | ![Modo mini com fila](docs/screenshots/21-desktop-mini-queue.png)<br/>**Mini com fila** · lista "a seguir" |
+| ![Letra em cinema](docs/screenshots/22-desktop-lyrics-cinema.png)<br/>**Letra em cinema** · palco em tela cheia | |
+
+<sub>Capturas do preview no navegador, com catálogo simulado. A janela nativa abaixo é a exceção: é uma captura do binário Tauri em execução.</sub>
+
+A mesma interface dentro da janela Tauri real no Windows, não em uma aba de navegador:
+
+![Janela nativa](docs/screenshots/09-native-window.png)
+
+## Terminal
+
+Não se aplica: é um app desktop com interface gráfica, sem CLI própria. Os comandos de desenvolvimento
+são os de `npm run`/`cargo` acima.
+
+## Notas de design
+
+Declaradas antes do primeiro componente, porque o brief era "inspirado no Spotify":
+
+> Interface de produto desktop de alta densidade para quem já vive no Spotify. Shell escuro, um único
+> acento quente de vermelho YouTube (`#ff3d5a`), superfícies geradas em vez de fotográficas.
+> Dials: **variância 4 / movimento 4 / densidade 7**.
+
+Excluídos de propósito: gradientes roxos de hero, glassmorphism em tudo, tudo em formato pílula, fundos
+creme, palavras de destaque em itálico. O acento aparece só onde merece atenção: marca, navegação
+ativa, ações de tocar, faixa atual e corações curtidos.
+
+A capa é um gradiente em malha determinístico derivado do id do lançamento, com uma grade tênue por
+cima, para parecer capa impressa. Mesma entrada, mesma capa, em toda abertura, sem assets binários e
+sem depender de rede.
+
+## Acessibilidade
+
+Papéis semânticos na tabela de faixas, `aria-label` em todo controle só com ícone, um único anel de
+foco visível no app inteiro, anúncios `aria-live` na troca de faixa, `prefers-reduced-motion`
+respeitado e alcance por teclado para as duas ações de cada card. O contraste mira WCAG AA em texto
+e controles.
+
+## Advisories conhecidos
+
+O Dependabot reporta um advisory moderado no lockfile, aceito em vez de ignorado:
+
+| Crate | Advisory | Por que não dá para corrigir aqui |
 |---|---|---|
-| `glib` 0.18.5 | Unsoundness in the `Iterator` / `DoubleEndedIterator` impls for `glib::VariantStrIter`, fixed in 0.20.0 | `gtk 0.18.2` — pulled in by Tauri's Linux backend through `muda` and `tao` — pins `glib = "^0.18"`, so 0.20.0 is not selectable. Resolution needs an upstream gtk-rs bump in Tauri. |
+| `glib` 0.18.5 | Unsoundness nas implementações de `Iterator` / `DoubleEndedIterator` de `glib::VariantStrIter`, corrigido na 0.20.0 | `gtk 0.18.2`, trazido pelo backend Linux do Tauri via `muda` e `tao`, fixa `glib = "^0.18"`, então a 0.20.0 não é selecionável. A solução depende de um bump do gtk-rs no Tauri. |
 
-It is a **Linux-only** dependency. `glib`, `gtk` and `atk` are not compiled for
-`x86_64-pc-windows-msvc` or Apple targets, so the Windows and macOS binaries never contain the
-affected code. Revisit when Tauri's Linux backend moves to gtk-rs 0.20+.
+A dependência é **só de Linux**: `glib`, `gtk` e `atk` não são compilados para
+`x86_64-pc-windows-msvc` nem para alvos Apple, então os binários de Windows e macOS não contêm o
+código afetado. Revisitar quando o backend Linux do Tauri migrar para gtk-rs 0.20+.
 
-## License
+## Segurança
 
-MIT — see [LICENSE](LICENSE).
+- Tokens e cookies são guardados só pelo Rust, só no cofre do SO (`keyring`); nunca entram no `localStorage`.
+- O refresh token nunca entra no webview.
+- Segredos OAuth vêm de variáveis de ambiente e não são commitados.
+- A CSP de `src-tauri/tauri.conf.json` e o escopo do `assetProtocol` não são afrouxados (regra em [AGENTS.md](AGENTS.md)).
+- Modelo de ameaças e fluxo completo em [docs/authentication.md](docs/authentication.md).
+
+## Limitações conhecidas
+
+> [!NOTE]
+> O login real exige um cliente OAuth do tipo *TVs and Limited Input devices* seu, em `YTM_GOOGLE_CLIENT_ID` e `YTM_GOOGLE_CLIENT_SECRET`. Sem eles, a tela de login informa o que falta.
+
+- O preview do navegador usa catálogo e transporte simulados; nenhum dado real chega a ele.
+- Catálogo, busca e áudio dependem da API InnerTube do YouTube Music e do `yt-dlp`. Nenhuma das duas é uma API pública estável: mudanças do lado do YouTube podem quebrar a extração.
+- A biblioteca pessoal depende do header `Cookie` de uma aba autenticada, colado à mão. Ele deixa de funcionar quando a sessão do navegador expira.
+- Sem `yt-dlp` no `PATH`, o player cai para o transporte simulado e rotula isso na barra de reprodução.
+- Letras: ao abrir o painel, artista, título e álbum são enviados ao LRCLIB. Com o painel fechado, nada é enviado.
+- O advisory do `glib` no Linux está aceito; ver [Advisories conhecidos](#advisories-conhecidos).
+- Os testes Rust que tocam serviços reais são opt-in (`YTM_LIVE=1`) e não rodam no CI.
+
+## Documentação
+
+| Documento | O que tem |
+|---|---|
+| 🔐 [Autenticação](docs/authentication.md) | Device Flow implementado, modelo de ameaças do armazenamento, configuração e preview do navegador (em inglês) |
+
+## Contribuição
+
+- README e documentação em pt-BR; código, identificadores e commits em inglês.
+- Regras para agentes, fronteiras e gates de CI estão em [AGENTS.md](AGENTS.md).
+- Antes de abrir PR, rode `npm run build`, `npm test` e os comandos `cargo` de [Testes, lint e build](#testes-lint-e-build).
+
+## Licença
+
+MIT. Veja [LICENSE](LICENSE).

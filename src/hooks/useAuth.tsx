@@ -66,6 +66,8 @@ export function useAuth(): AuthApi {
     if (status !== "awaiting" || !deviceCode) return;
     const run = generation.current;
     let timer = 0;
+    // RFC 8628 section 3.5: every slow_down raises the interval by 5 s for all later polls.
+    let interval = deviceCode.interval;
 
     const schedule = (seconds: number) => {
       timer = window.setTimeout(async () => {
@@ -91,7 +93,8 @@ export function useAuth(): AuthApi {
             setStatus("error");
             return;
           }
-          schedule(result.status === "slow-down" ? deviceCode.interval + 5 : deviceCode.interval);
+          if (result.status === "slow-down") interval += 5;
+          schedule(interval);
         } catch (cause) {
           if (generation.current !== run) return;
           setError(cause instanceof Error ? cause.message : String(cause));
