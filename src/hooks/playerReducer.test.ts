@@ -21,6 +21,7 @@ const prefs = (overrides: Partial<Preferences> = {}): Preferences => ({
   liked: [],
   autoplay: true,
   rate: 1,
+  crossfade: 0,
   ...overrides,
 });
 

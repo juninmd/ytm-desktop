@@ -1,8 +1,9 @@
-import { ArrowDown, ArrowUp, Disc3, Ellipsis, GripVertical, Heart, ListX, Play, Trash2, UserRound, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleArrowDown, Disc3, Ellipsis, GripVertical, Heart, Info, ListX, Play, Trash2, UserRound, X } from "lucide-react";
 import { Cover } from "./Cover";
 import { IconButton } from "./ui/IconButton";
 import { anchorFromElement, anchorFromEvent, type MenuAnchor } from "./ui/Menu";
 import { useMenu } from "./ui/useMenu";
+import { useCatalog } from "../hooks/useCatalog";
 import { useDragReorder } from "../hooks/useDragReorder";
 import { useNavigation } from "../hooks/useNavigation";
 import { usePlayer } from "../hooks/usePlayer";
@@ -26,6 +27,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
   const menu = useMenu();
   const navigation = useNavigation();
+  const { isDownloaded } = useCatalog();
   const reorder = useDragReorder(
     (from, to) => moveQueued(state.cursor + 1 + from, state.cursor + 1 + to),
   );
@@ -51,7 +53,16 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
           id: "like",
           label: liked ? t("player.unlike") : t("player.like"),
           icon: <Heart className={cn("size-4", liked && "fill-accent text-accent")} />,
+          // `L` acts on the playing track, so only that row advertises it.
+          hint: index === null ? "L" : undefined,
           onSelect: () => toggleLike(track.id),
+        },
+        {
+          id: "details",
+          label: t("menu.details"),
+          icon: <Info className="size-4" />,
+          disabled: !navigation,
+          onSelect: () => navigation?.showInfo(track),
         },
         ...(index === null
           ? []
@@ -123,6 +134,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
             track={current}
             playing
             liked={isLiked(current.id)}
+            offline={isDownloaded(current.id)}
             onLike={toggleLike}
             onJump={() => jump(state.cursor)}
             onMenu={(anchor, owner) => openMenu(current, null, anchor, owner)}
@@ -157,6 +169,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
                 key={`${track.id}-${index}`}
                 track={track}
                 liked={isLiked(track.id)}
+                offline={isDownloaded(track.id)}
                 onLike={toggleLike}
                 onJump={() => jump(positionOf(index))}
                 onMenu={(anchor, owner) => openMenu(track, index, anchor, owner)}
@@ -183,6 +196,7 @@ function QueueRow({
   track,
   playing = false,
   liked,
+  offline = false,
   onLike,
   onJump,
   onMenu,
@@ -192,6 +206,7 @@ function QueueRow({
   track: Track;
   playing?: boolean;
   liked: boolean;
+  offline?: boolean;
   onLike: (id: string) => void;
   onJump: () => void;
   onMenu: (anchor: MenuAnchor, owner?: boolean) => void;
@@ -249,7 +264,15 @@ function QueueRow({
         <span className={cn("block truncate text-sm", playing ? "text-accent" : "font-medium")}>
           {track.title}
         </span>
-        <span className="block truncate text-xs text-muted">{track.artist}</span>
+        <span className="flex items-center gap-1 text-xs text-muted">
+          {offline && (
+            <CircleArrowDown
+              className="size-3 shrink-0 fill-accent/20 text-accent"
+              aria-label={t("track.offlineBadge")}
+            />
+          )}
+          <span className="truncate">{track.artist}</span>
+        </span>
       </button>
       <IconButton
         label={liked ? t("player.unlike") : t("player.like")}

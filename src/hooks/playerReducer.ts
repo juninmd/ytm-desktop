@@ -1,3 +1,4 @@
+import { MAX_CROSSFADE } from "../lib/crossfade";
 import type { PlayerState, RepeatMode, Track } from "../types";
 
 /**
@@ -32,6 +33,7 @@ export type Action =
   | { type: "jump"; position: number }
   | { type: "pause" }
   | { type: "rate"; value: number }
+  | { type: "crossfade"; seconds: number }
   | { type: "stop-after"; value: boolean };
 
 export type Preferences = {
@@ -40,6 +42,7 @@ export type Preferences = {
   liked: string[];
   autoplay: boolean;
   rate: number;
+  crossfade: number;
   /** The previous session, so the player can offer to continue where it stopped. */
   session?: Session;
 };
@@ -58,6 +61,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   liked: [],
   autoplay: true,
   rate: 1,
+  crossfade: 0,
 };
 
 export const MIN_RATE = 0.25;
@@ -99,6 +103,7 @@ export function createInitialState(preferences: Preferences = DEFAULT_PREFERENCE
     needsRadio: false,
     autoplay: preferences.autoplay,
     rate: clamp(preferences.rate, MIN_RATE, MAX_RATE),
+    crossfade: Math.round(clamp(preferences.crossfade, 0, MAX_CROSSFADE)),
     stopAfterTrack: false,
   };
 
@@ -422,7 +427,16 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
 
     case "stop-after":
       return { ...state, stopAfterTrack: action.value };
+
+    case "crossfade":
+      return { ...state, crossfade: Math.round(clamp(action.seconds, 0, MAX_CROSSFADE)) };
   }
+}
+
+/** The track that will play after the current one, or `null` at the end of the queue. */
+export function peekNext(state: PlayerState): Track | null {
+  const position = step(state, 1);
+  return position === null ? null : (state.queue[state.order[position]] ?? null);
 }
 
 /** Whether `position` points at something still to come (not the playing track). */

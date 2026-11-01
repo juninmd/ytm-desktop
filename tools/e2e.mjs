@@ -410,6 +410,38 @@ check(
 );
 await page.keyboard.press("m");
 
+// 7d2. Track details, the transition menu and visible shortcut hints.
+await row.click({ button: "right" });
+await page.getByRole("menuitem", { name: "Detalhes da faixa" }).click();
+await page.getByRole("dialog", { name: "Detalhes da faixa" }).waitFor();
+check(
+  "track details lists what the catalogue knows",
+  (await page.getByRole("dialog").locator("text=Artista Real").count()) > 0 &&
+    (await page.getByRole("dialog").locator("text=Não baixada").count()) > 0,
+);
+await page.keyboard.press("Escape");
+check("Escape closes the details", (await page.getByRole("dialog").count()) === 0);
+
+await page.getByRole("button", { name: /Transição entre faixas/ }).click();
+await page.getByRole("menuitemradio", { name: "Sobrepor 6 segundos" }).click();
+check(
+  "the transition length is shown and persisted",
+  (await page.getByRole("button", { name: "Transição entre faixas: 6 s" }).count()) === 1 &&
+    (await page.evaluate(() => JSON.parse(localStorage.getItem("ytm-desktop:preferences")).crossfade)) === 6,
+);
+await page.getByRole("button", { name: /Transição entre faixas/ }).click();
+await page.getByRole("menuitemradio", { name: "Sem sobreposição (sem pausas)" }).click();
+
+check(
+  "controls advertise their keyboard shortcut",
+  (await page.locator('button[title="Embaralhar (S)"]').count()) === 1 &&
+    (await page.locator('button[title="Modo mini (Ctrl Shift M)"]').count()) === 1,
+);
+
+// A queued track for the mini strip's list to show.
+await page.getByRole("row").filter({ hasText: "Segunda Faixa" }).first().click({ button: "right" });
+await page.getByRole("menuitem", { name: "Adicionar à fila" }).click();
+
 // 7e. Mini mode: the workspace gives way to a compact strip and the window shrinks.
 const windowCall = (name) =>
   page.evaluate((cmd) => window.__invokeCalls.filter((call) => call.cmd === cmd), `plugin:window|${name}`);
@@ -433,6 +465,34 @@ check(
   ),
 );
 await shot("20-desktop-mini-mode");
+await page.setViewportSize({ width: 420, height: 420 });
+await page.getByRole("button", { name: "Mostrar fila" }).click();
+await page.waitForSelector("[data-mini-queue]");
+check(
+  "the strip's list opens and grows the window",
+  JSON.stringify((await windowCall("set_size")).at(-1)?.args).includes("420") &&
+    (await page.locator("[data-mini-queue]").locator("text=Segunda Faixa").count()) > 0,
+);
+await shot("21-desktop-mini-queue");
+await page.getByRole("button", { name: "Ocultar fila" }).click();
+await page.waitForFunction(() => document.querySelector("[data-mini-queue]") === null);
+await page.waitForFunction(
+  () =>
+    JSON.stringify(
+      window.__invokeCalls.filter((call) => call.cmd === "plugin:window|set_size").at(-1)?.args,
+    ).includes("150"),
+  null,
+  { timeout: 3000 },
+);
+check("closing the list shrinks the window back", true);
+await page.setViewportSize({ width: 420, height: 150 });
+await page.getByRole("button", { name: "Ocultar os controles até passar o mouse" }).click();
+check(
+  "controls can be set to hide until hover, and the choice persists",
+  (await page.locator("[data-controls]").getAttribute("class")).includes("opacity-0") &&
+    (await page.evaluate(() => localStorage.getItem("ytm-desktop:mini-autohide"))) === "1",
+);
+await page.getByRole("button", { name: "Mostrar os controles sempre" }).click();
 await page.getByRole("button", { name: "Pausar" }).click();
 check("the strip drives the transport", (await page.getByRole("button", { name: "Tocar", exact: true }).count()) === 1);
 await page.getByRole("button", { name: "Tocar", exact: true }).click();
@@ -457,6 +517,26 @@ const reopened = JSON.stringify((await windowCall("set_position")).at(-1)?.args)
 check("mini mode reopens at its remembered position", reopened.includes("Physical") && reopened.includes("120"));
 await page.getByRole("button", { name: "Voltar ao modo completo" }).click();
 await page.waitForSelector("text=Resultados para");
+
+// 7f. Lyrics in cinema mode: the stage opens from the panel and Escape leaves it.
+await page.getByRole("button", { name: "Mostrar letra" }).click();
+await page.getByRole("button", { name: "Modo cinema da letra" }).click();
+await page.waitForSelector("[data-cinema] [data-line]");
+await shot("22-desktop-lyrics-cinema");
+check(
+  "cinema shows every lyric line over the stage",
+  (await page.locator("[data-cinema] [data-line]").count()) === 3,
+);
+await page.locator('[data-cinema] [data-line="2"]').click();
+await page.waitForFunction(
+  () => document.querySelector('[data-cinema] input[aria-label="Posição da faixa"]')?.value >= 59,
+  null,
+  { timeout: 3000 },
+);
+check("clicking a line seeks to it", true);
+await page.keyboard.press("Escape");
+check("Escape leaves cinema mode", (await page.locator("[data-cinema]").count()) === 0);
+await page.getByRole("button", { name: "Ocultar letra" }).click();
 
 // 8. Downloading a track reaches the backend, and it shows under "Baixados".
 await page.getByRole("button", { name: "Baixar Faixa do Backend" }).first().click();
@@ -486,6 +566,16 @@ await page.waitForSelector("text=Home");
 check("switching to English translates the chrome", (await page.locator("text=Downloads").count()) > 0);
 await page.selectOption("#locale", "pt");
 await page.waitForSelector("text=Início");
+
+// 11. In a narrow window the search collapses to a button and opens on focus.
+await page.setViewportSize({ width: 1000, height: 700 });
+const searchWidth = () => page.evaluate(() => document.getElementById("global-search").getBoundingClientRect().width);
+await page.waitForTimeout(350);
+check("search collapses when the window is narrow", (await searchWidth()) < 80);
+await page.keyboard.press("/");
+await page.waitForTimeout(350);
+check("the / key opens the collapsed search", (await searchWidth()) > 200);
+await page.setViewportSize({ width: 1440, height: 900 });
 
 await browser.close();
 

@@ -4,6 +4,7 @@ import {
   currentTrack,
   MAX_RESUME_TRACKS,
   nextRate,
+  peekNext,
   reducer,
   snapshotSession,
   type Preferences,
@@ -27,6 +28,7 @@ const prefs = (overrides: Partial<Preferences> = {}): Preferences => ({
   liked: [],
   autoplay: true,
   rate: 1,
+  crossfade: 0,
   ...overrides,
 });
 
@@ -152,6 +154,34 @@ describe("queue edits meeting shuffle and the autoplay radio", () => {
     expect(currentTrack(state)?.id).toBe("x");
     expect(state.isPlaying).toBe(true);
     expect(state.needsRadio).toBe(false);
+  });
+});
+
+describe("what plays next", () => {
+  it("peeks at the next track without moving", () => {
+    const state = playing();
+    expect(peekNext(state)?.id).toBe("b");
+    expect(currentTrack(state)?.id).toBe("a");
+  });
+
+  it("follows queue edits, and reports the end of the queue", () => {
+    let state = reducer(playing(), { type: "enqueue", tracks: [track("x")], where: "next" });
+    expect(peekNext(state)?.id).toBe("x");
+    state = reducer(state, { type: "jump", position: 4 });
+    expect(peekNext(state)).toBeNull();
+    expect(peekNext({ ...state, repeat: "all" })?.id).toBe("a");
+  });
+});
+
+describe("crossfade setting", () => {
+  it("is whole seconds within the supported range", () => {
+    const state = playing();
+    expect(reducer(state, { type: "crossfade", seconds: 6 }).crossfade).toBe(6);
+    expect(reducer(state, { type: "crossfade", seconds: 5.6 }).crossfade).toBe(6);
+    expect(reducer(state, { type: "crossfade", seconds: 99 }).crossfade).toBe(12);
+    expect(reducer(state, { type: "crossfade", seconds: -4 }).crossfade).toBe(0);
+    expect(createInitialState(prefs({ crossfade: 8 })).crossfade).toBe(8);
+    expect(createInitialState(prefs({ crossfade: 400 })).crossfade).toBe(12);
   });
 });
 

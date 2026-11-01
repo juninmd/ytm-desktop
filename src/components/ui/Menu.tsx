@@ -17,6 +17,8 @@ export type MenuItem =
       id: string;
       label: string;
       icon?: ReactNode;
+      /** The item's keyboard shortcut, shown at the right edge. */
+      hint?: string;
       /** Renders a check mark: the item is a choice among several. */
       checked?: boolean;
       disabled?: boolean;
@@ -195,6 +197,11 @@ export function Menu({ label, items, anchor, onClose }: Props) {
           >
             <span className="grid size-4 shrink-0 place-items-center text-muted">{item.icon}</span>
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            {item.hint && (
+              <kbd className="shrink-0 rounded border border-line-strong px-1 font-sans text-[10px] text-subtle">
+                {item.hint}
+              </kbd>
+            )}
             {item.checked && <Check className="size-4 shrink-0 text-accent" />}
           </button>
         );

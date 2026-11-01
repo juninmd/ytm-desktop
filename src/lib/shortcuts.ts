@@ -18,6 +18,7 @@ export type Command =
   | "speed-up"
   | "search"
   | "mini"
+  | "cinema"
   | "help";
 
 export type KeyInput = {
@@ -52,6 +53,7 @@ export const SHORTCUTS: { command: Command; keys: string[]; label: MessageKey }[
   { command: "queue", keys: ["Q", "Alt Shift Q"], label: "keys.queue" },
   { command: "lyrics", keys: ["Y"], label: "keys.lyrics" },
   { command: "search", keys: ["/", "Ctrl K", "Ctrl L"], label: "keys.search" },
+  { command: "cinema", keys: ["C"], label: "keys.cinema" },
   { command: "mini", keys: ["Ctrl Shift M"], label: "keys.mini" },
   { command: "help", keys: ["?"], label: "keys.help" },
 ];
@@ -72,6 +74,7 @@ const PLAIN: Record<string, Command> = {
   "]": "speed-up",
   q: "queue",
   y: "lyrics",
+  c: "cinema",
   "/": "search",
   "?": "help",
 };

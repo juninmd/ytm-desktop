@@ -9,6 +9,7 @@ type Handlers = {
   toggleLyrics: () => void;
   toggleHelp: () => void;
   toggleMini: () => void;
+  toggleCinema: () => void;
 };
 
 function targetOf(element: EventTarget | null): Target {
@@ -21,11 +22,11 @@ function targetOf(element: EventTarget | null): Target {
 }
 
 /** Binds the global keyboard map once; the player is read through a ref, not re-subscribed. */
-export function useShortcuts({ toggleQueue, toggleLyrics, toggleHelp, toggleMini }: Handlers) {
+export function useShortcuts({ toggleQueue, toggleLyrics, toggleHelp, toggleMini, toggleCinema }: Handlers) {
   const player = usePlayer();
   const { t } = useI18n();
-  const latest = useRef({ player, t, toggleQueue, toggleLyrics, toggleHelp, toggleMini });
-  latest.current = { player, t, toggleQueue, toggleLyrics, toggleHelp, toggleMini };
+  const latest = useRef({ player, t, toggleQueue, toggleLyrics, toggleHelp, toggleMini, toggleCinema });
+  latest.current = { player, t, toggleQueue, toggleLyrics, toggleHelp, toggleMini, toggleCinema };
 
   useEffect(() => {
     const run = (command: Command) => {
@@ -79,6 +80,9 @@ export function useShortcuts({ toggleQueue, toggleLyrics, toggleHelp, toggleMini
           break;
         case "search":
           document.getElementById("global-search")?.focus();
+          break;
+        case "cinema":
+          latest.current.toggleCinema();
           break;
         case "mini":
           latest.current.toggleMini();
