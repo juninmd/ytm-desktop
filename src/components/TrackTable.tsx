@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Clock, Disc3, Download, Ellipsis, Heart, ListEnd, ListStart, Loader2, Play, UserRound } from "lucide-react";
+import { Check, CircleArrowDown, Clock, Disc3, Download, Ellipsis, Heart, Info, ListEnd, ListStart, Loader2, Play, UserRound } from "lucide-react";
 import { Cover } from "./Cover";
 import { Eq } from "./ui/Eq";
 import { IconButton } from "./ui/IconButton";
@@ -77,6 +77,13 @@ export function TrackTable({
           label: liked ? t("player.unlike") : t("player.like"),
           icon: <Heart className={cn("size-4", liked && "fill-accent text-accent")} />,
           onSelect: () => toggleLike(track.id),
+        },
+        {
+          id: "details",
+          label: t("menu.details"),
+          icon: <Info className="size-4" />,
+          disabled: !navigation,
+          onSelect: () => navigation?.showInfo(track),
         },
         {
           id: "download",
@@ -168,7 +175,15 @@ export function TrackTable({
                   <span className={cn("block truncate font-medium", playing && "text-accent")}>
                     {track.title}
                   </span>
-                  <span className="block truncate text-xs text-muted">{track.artist}</span>
+                  <span className="flex items-center gap-1 text-xs text-muted">
+                    {saved && (
+                      <CircleArrowDown
+                        className="size-3 shrink-0 fill-accent/20 text-accent"
+                        aria-label={t("track.offlineBadge")}
+                      />
+                    )}
+                    <span className="truncate">{track.artist}</span>
+                  </span>
                 </button>
               </span>
 

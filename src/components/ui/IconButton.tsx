@@ -5,15 +5,17 @@ type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label"> & {
   /** Required: every icon-only control needs an accessible name. */
   label: string;
   active?: boolean;
+  /** The keyboard shortcut, shown in the tooltip (the accessible name stays clean). */
+  hint?: string;
   children: ReactNode;
 };
 
-export function IconButton({ label, active, className, children, ...rest }: Props) {
+export function IconButton({ label, active, hint, className, children, ...rest }: Props) {
   return (
     <button
       type="button"
       aria-label={label}
-      title={label}
+      title={hint ? `${label} (${hint})` : label}
       aria-pressed={active}
       className={cn(
         "grid size-8 shrink-0 place-items-center rounded-full text-muted transition-colors",

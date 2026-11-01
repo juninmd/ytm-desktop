@@ -26,7 +26,14 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue,
         </IconButton>
       </div>
 
-      <div className="relative w-full max-w-[420px]">
+      <div
+        className={cn(
+          "relative w-full max-w-[420px] transition-[width] duration-200",
+          // Narrow windows: a round search button that opens on focus, and stays open with a query.
+          "max-[1100px]:w-10 max-[1100px]:focus-within:w-72",
+          query && "max-[1100px]:w-72",
+        )}
+      >
         <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-subtle" />
         <input
           id="global-search"
@@ -36,8 +43,11 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue,
           placeholder={t("top.placeholder")}
           aria-label={t("top.search")}
           className={cn(
-            "h-10 w-full rounded-full border border-transparent bg-raised pr-10 pl-10 text-sm",
+            "h-10 w-full min-w-0 rounded-full border border-transparent bg-raised pl-10 text-sm",
+            // Collapsed, the right padding goes too, or the input stays wider than its button.
+            query ? "pr-10" : "pr-10 max-[1100px]:pr-0 max-[1100px]:focus:pr-10",
             "placeholder:text-subtle hover:border-line-strong focus-visible:border-line-strong focus-visible:outline-none",
+            "max-[1100px]:placeholder:text-transparent max-[1100px]:focus:placeholder:text-subtle",
           )}
         />
         {query && (
@@ -55,11 +65,12 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue,
         <span className="hidden items-center gap-2 rounded-full border border-line px-3 py-1.5 text-xs text-muted xl:flex">
           {t("top.demo")}
         </span>
-        <IconButton label={t("mini.enter")} className="size-9 bg-raised" onClick={onOpenMini}>
+        <IconButton label={t("mini.enter")} hint="Ctrl Shift M" className="size-9 bg-raised" onClick={onOpenMini}>
           <PictureInPicture2 className="size-4" />
         </IconButton>
         <IconButton
           label={t("keys.open")}
+          hint="?"
           className="size-9 bg-raised"
           onClick={onOpenShortcuts}
         >
@@ -67,6 +78,7 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue,
         </IconButton>
         <IconButton
           label={queueOpen ? t("top.hideQueue") : t("top.showQueue")}
+          hint="Q"
           active={queueOpen}
           className="size-9 bg-raised"
           onClick={onToggleQueue}

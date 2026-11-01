@@ -75,7 +75,7 @@ describe("keyboard shortcuts", () => {
     const commands = SHORTCUTS.map((entry) => entry.command);
     expect(new Set(commands).size).toBe(commands.length);
 
-    const keys = [" ", "n", "p", "m", "l", "s", "r", "[", "]", "q", "y", "/", "?"];
+    const keys = [" ", "n", "p", "m", "l", "s", "r", "[", "]", "q", "y", "c", "/", "?"];
     const reachable = new Set(
       [...keys, "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((key) =>
         resolveShortcut(press(key), body),

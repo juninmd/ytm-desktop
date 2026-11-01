@@ -76,6 +76,8 @@ export type PlayerState = {
   autoplay: boolean;
   /** Playback speed multiplier; pitch is preserved by the audio element. */
   rate: number;
+  /** Seconds of overlap between tracks; `0` is off (the change is still gapless). */
+  crossfade: number;
   /** Sleep timer "end of track": pause as soon as the current track finishes. */
   stopAfterTrack: boolean;
 };

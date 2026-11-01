@@ -22,11 +22,13 @@ import {
 import {
   createInitialState,
   MAX_RESUME_TRACKS,
+  peekNext,
   reducer,
   snapshotSession,
   type Preferences,
 } from "./playerReducer";
 import { useSleepTimer } from "./useSleepTimer";
+import { crossfadeDurationMs, crossfadeGains, shouldStartCrossfade } from "../lib/crossfade";
 import type { SleepTimer } from "../lib/sleepTimer";
 import { useI18n } from "../lib/i18n";
 
@@ -102,10 +104,12 @@ function loadPreferences(): Preferences {
       liked: Array.isArray(parsed.liked) ? parsed.liked : [],
       autoplay: typeof parsed.autoplay === "boolean" ? parsed.autoplay : true,
       rate: typeof parsed.rate === "number" && Number.isFinite(parsed.rate) ? parsed.rate : 1,
+      crossfade:
+        typeof parsed.crossfade === "number" && Number.isFinite(parsed.crossfade) ? parsed.crossfade : 0,
       session: readSession(parsed.session),
     };
   } catch {
-    return { volume: 0.7, repeat: "off", liked: [], autoplay: true, rate: 1 };
+    return { volume: 0.7, repeat: "off", liked: [], autoplay: true, rate: 1, crossfade: 0 };
   }
 }
 
@@ -149,6 +153,8 @@ export type PlayerApi = {
   clearUpcoming: () => void;
   jump: (position: number) => void;
   setRate: (value: number) => void;
+  /** Seconds of overlap between tracks; `0` keeps the change gapless. */
+  setCrossfade: (seconds: number) => void;
   /** The armed sleep timer, if any. */
   sleep: SleepTimer | null;
   startSleep: (minutes: number) => void;
@@ -181,6 +187,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Sleep-timer fade, multiplied into every volume applied to the element.
   const fadeRef = useRef(1);
   const noticeTimer = useRef<number | undefined>(undefined);
+  // The next track, resolved and buffering on a second element so the change is
+  // gapless; and the overlap in progress when a crossfade is running.
+  const nextSlot = useRef<{ id: string; audio: HTMLAudioElement } | null>(null);
+  const fading = useRef<{ from: HTMLAudioElement; to: HTMLAudioElement; timer: number } | null>(null);
 
   // Latest state, readable from audio callbacks without re-subscribing.
   const stateRef = useRef(state);
@@ -214,17 +224,122 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (next && next.id !== currentId) void prefetchStream(next.id).catch(() => {});
   }, [currentId, state.cursor, state.order, state.queue]);
 
+  /** Stops an overlap that is no longer wanted and puts both elements back. */
+  const abortCrossfade = useCallback(() => {
+    const running = fading.current;
+    if (!running) return;
+    window.clearInterval(running.timer);
+    fading.current = null;
+    running.to.pause();
+    try {
+      running.to.currentTime = 0;
+    } catch {
+      // Not seekable yet; it is silent and paused either way.
+    }
+    running.to.volume = 0;
+    running.from.volume = stateRef.current.volume * fadeRef.current;
+  }, []);
+
+  /** Starts the overlap when the playing track is close enough to its end. */
+  const maybeCrossfade = useCallback(
+    (from: HTMLAudioElement) => {
+      const latest = stateRef.current;
+      const slot = nextSlot.current;
+      const remaining = from.duration - from.currentTime;
+      const ready =
+        slot !== null && slot.audio.readyState >= 2 && peekNext(latest)?.id === slot.id;
+      if (
+        !slot ||
+        !shouldStartCrossfade({
+          seconds: latest.crossfade,
+          remaining,
+          nextReady: ready,
+          playing: latest.isPlaying,
+          repeatOne: latest.repeat === "one",
+          stopAfterTrack: latest.stopAfterTrack,
+          alreadyFading: fading.current !== null,
+        })
+      ) {
+        return;
+      }
+
+      const to = slot.audio;
+      const total = crossfadeDurationMs(remaining, latest.crossfade, latest.rate);
+      to.volume = 0;
+      to.muted = latest.muted;
+      to.defaultPlaybackRate = latest.rate;
+      to.playbackRate = latest.rate;
+      void to.play().catch(abortCrossfade);
+
+      const began = performance.now();
+      const timer = window.setInterval(() => {
+        const progress = total > 0 ? (performance.now() - began) / total : 1;
+        const gain = crossfadeGains(progress);
+        const volume = stateRef.current.volume * fadeRef.current;
+        from.volume = volume * gain.out;
+        to.volume = volume * gain.in;
+        if (progress >= 1) {
+          window.clearInterval(timer);
+          fading.current = null;
+          from.pause();
+          dispatch({ type: "next", manual: false });
+        }
+      }, 50);
+      fading.current = { from, to, timer };
+    },
+    [abortCrossfade],
+  );
+
+  const releaseSlot = useCallback(() => {
+    const slot = nextSlot.current;
+    nextSlot.current = null;
+    if (!slot) return;
+    slot.audio.pause();
+    slot.audio.removeAttribute("src");
+    slot.audio.load();
+  }, []);
+
+  useEffect(
+    () => () => {
+      abortCrossfade();
+      releaseSlot();
+    },
+    [abortCrossfade, releaseSlot],
+  );
+
   // Load (or reload) the real stream whenever the track — or a replay — changes.
   useEffect(() => {
     if (!useRealAudio || !currentId) return;
 
     let cancelled = false;
-    const audio = new Audio();
+    // The preloaded element for this very track is taken over as-is (already
+    // buffered, possibly already playing mid-crossfade); any other is stale.
+    const slot = nextSlot.current;
+    // A preload that failed to load must not be adopted: no `error` event would follow.
+    const adopted = slot && slot.id === currentId && !slot.audio.error ? slot.audio : null;
+    if (fading.current && fading.current.to !== adopted) abortCrossfade();
+    if (adopted && fading.current?.to === adopted) {
+      window.clearInterval(fading.current.timer);
+      fading.current = null;
+    }
+    if (slot) {
+      nextSlot.current = null;
+      if (!adopted) {
+        slot.audio.pause();
+        slot.audio.removeAttribute("src");
+        slot.audio.load();
+      }
+    }
+
+    const audio = adopted ?? new Audio();
     audio.preload = "auto";
     audioRef.current = audio;
-    setEngine("sim");
+    if (!adopted) setEngine("sim");
 
-    const onTime = () => dispatch({ type: "sync", position: audio.currentTime });
+    const onTime = () => {
+      dispatch({ type: "sync", position: audio.currentTime });
+      maybeCrossfade(audio);
+    };
     const onMeta = () => {
       dispatch({ type: "duration", duration: audio.duration });
       // Metadata loaded: the element can actually play, so claim real audio.
@@ -282,11 +397,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     audio.addEventListener("error", onError);
     audio.addEventListener("ended", onEnded);
 
-    void start(true).catch(() => {
-      // No real stream available (yt-dlp missing, offline): the simulated
-      // transport takes over instead of leaving the user with a dead player.
-      if (!cancelled) setEngine("sim");
-    });
+    if (adopted) {
+      audio.volume = stateRef.current.volume * fadeRef.current;
+      audio.muted = stateRef.current.muted;
+      audio.defaultPlaybackRate = stateRef.current.rate;
+      audio.playbackRate = stateRef.current.rate;
+      if (stateRef.current.isPlaying && audio.paused) {
+        void audio.play().catch(() => {
+          if (!cancelled) setEngine("sim");
+        });
+      }
+      if (audio.readyState >= 1) onMeta(); // the duration is already known
+    } else {
+      void start(true).catch(() => {
+        // No real stream available (yt-dlp missing, offline): the simulated
+        // transport takes over instead of leaving the user with a dead player.
+        if (!cancelled) setEngine("sim");
+      });
+    }
 
     return () => {
       cancelled = true;
@@ -299,17 +427,47 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener("ended", onEnded);
       audioRef.current = null;
     };
-  }, [currentId, state.playToken, useRealAudio]);
+  }, [currentId, state.playToken, useRealAudio, abortCrossfade, maybeCrossfade]);
+
+  // Buffer the next track on its own element, so the change has no resolve gap.
+  const upcomingId = peekNext(state)?.id ?? null;
+  useEffect(() => {
+    if (!isDesktop() || engine !== "audio") return;
+    if (!upcomingId || state.repeat === "one") {
+      if (!fading.current) releaseSlot();
+      return;
+    }
+    if (nextSlot.current?.id === upcomingId) return;
+    releaseSlot();
+    let cancelled = false;
+    void resolveStream(upcomingId)
+      .then((info) => {
+        if (cancelled) return;
+        const audio = new Audio();
+        audio.preload = "auto";
+        audio.volume = 0;
+        audio.src = info.local ? localStreamUrl(info.url) : info.url;
+        audio.load();
+        nextSlot.current = { id: upcomingId, audio };
+      })
+      .catch(() => {
+        // Not resolvable yet: the change falls back to the ordinary load.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [upcomingId, engine, state.repeat, currentId, releaseSlot]);
 
   // Play/pause is driven by the real element when one is loaded.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || engine !== "audio") return;
+    if (!state.isPlaying) abortCrossfade();
     if (state.isPlaying) void audio.play().catch(() => {});
     else audio.pause();
     // A sleep fade leaves the element silent; paused now, it is safe to restore.
     audio.volume = stateRef.current.volume * fadeRef.current;
-  }, [state.isPlaying, engine]);
+  }, [state.isPlaying, engine, abortCrossfade]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -346,6 +504,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       liked: state.liked,
       autoplay: state.autoplay,
       rate: state.rate,
+      crossfade: state.crossfade,
       session: snapshotSession(stateRef.current),
     };
     writePreferences(persisted.current);
@@ -355,6 +514,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     state.liked,
     state.autoplay,
     state.rate,
+    state.crossfade,
     state.queue,
     state.order,
     state.cursor,
@@ -380,6 +540,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const seek = useCallback((seconds: number) => {
+    abortCrossfade(); // a seek during an overlap starts the overlap over, later
     const audio = audioRef.current;
     if (audio) {
       try {
@@ -389,7 +550,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     }
     dispatch({ type: "seek", position: seconds });
-  }, []);
+  }, [abortCrossfade]);
 
   const flash = useCallback((message: string, tone: "info" | "warn" = "warn") => {
     setNotice(message);
@@ -458,6 +619,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const clearUpcoming = useCallback(() => dispatch({ type: "clear-upcoming" }), []);
   const jump = useCallback((position: number) => dispatch({ type: "jump", position }), []);
   const setRate = useCallback((value: number) => dispatch({ type: "rate", value }), []);
+  const setCrossfade = useCallback(
+    (seconds: number) => dispatch({ type: "crossfade", seconds }),
+    [],
+  );
 
   const setStopAfterTrack = useCallback(
     (value: boolean) => dispatch({ type: "stop-after", value }),
@@ -608,6 +773,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       clearUpcoming,
       jump,
       setRate,
+      setCrossfade,
       sleep,
       startSleep: startMinutes,
       sleepAtEndOfTrack,
@@ -636,6 +802,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     clearUpcoming,
     jump,
     setRate,
+    setCrossfade,
     sleep,
     startMinutes,
     sleepAtEndOfTrack,

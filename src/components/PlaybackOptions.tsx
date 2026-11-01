@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Moon, TimerOff } from "lucide-react";
+import { ArrowRightLeft, Moon, TimerOff } from "lucide-react";
 import { anchorFromElement } from "./ui/Menu";
 import { useMenu } from "./ui/useMenu";
 import { usePlayer } from "../hooks/usePlayer";
 import { RATES } from "../hooks/playerReducer";
+import { CROSSFADE_SECONDS } from "../lib/crossfade";
 import { cn } from "../lib/cn";
 import { useI18n } from "../lib/i18n";
 import { formatRemaining, remainingMs, SLEEP_MINUTES } from "../lib/sleepTimer";
@@ -22,17 +23,48 @@ function useClock(active: boolean): number {
 
 /** Playback speed and sleep timer: the two menus that live next to the volume. */
 export function PlaybackOptions() {
-  const { state, setRate, sleep, startSleep, sleepAtEndOfTrack, cancelSleep } = usePlayer();
+  const { state, setRate, setCrossfade, sleep, startSleep, sleepAtEndOfTrack, cancelSleep } = usePlayer();
   const { t } = useI18n();
   const menu = useMenu();
   const now = useClock(sleep?.kind === "minutes");
 
   const left = sleep ? remainingMs(sleep, now) : null;
   const rateLabel = `${state.rate}×`;
+  const crossfadeValue = state.crossfade > 0 ? t("xfade.short", { count: state.crossfade }) : t("xfade.off");
 
   return (
     <>
       {menu.node}
+      <button
+        type="button"
+        aria-label={t("xfade.button", { value: crossfadeValue })}
+        title={t("xfade.button", { value: crossfadeValue })}
+        aria-haspopup="menu"
+        onClick={(event) =>
+          menu.toggle(
+            t("xfade.title"),
+            [
+              { id: "heading", heading: t("xfade.title") },
+              ...CROSSFADE_SECONDS.map((seconds) => ({
+                id: `xfade-${seconds}`,
+                label: seconds === 0 ? t("xfade.off") : t("xfade.seconds", { count: seconds }),
+                checked: seconds === state.crossfade,
+                onSelect: () => setCrossfade(seconds),
+              })),
+            ],
+            anchorFromElement(event.currentTarget, "up", "end"),
+          )
+        }
+        className={cn(
+          "flex h-8 shrink-0 items-center gap-1 rounded-full px-2 text-xs font-medium tabular-nums transition-colors",
+          "hover:bg-white/8 hover:text-fg",
+          state.crossfade > 0 ? "text-accent hover:text-accent" : "text-muted",
+        )}
+      >
+        <ArrowRightLeft className="size-4" />
+        {state.crossfade > 0 && <span>{state.crossfade} s</span>}
+      </button>
+
       <button
         type="button"
         aria-label={t("speed.button", { rate: state.rate })}

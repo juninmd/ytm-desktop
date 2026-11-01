@@ -4,6 +4,9 @@ import { isReachable, loadMiniPosition, saveMiniPosition } from "./miniPlacement
 /** Inner size of the mini window, in logical pixels. */
 export const MINI_SIZE = { width: 420, height: 150 } as const;
 
+/** The strip with the up-next list opened below it. */
+export const MINI_QUEUE_SIZE = { width: 420, height: 420 } as const;
+
 /** The full window's floor; mirrors `minWidth`/`minHeight` in tauri.conf.json. */
 export const FULL_MIN_SIZE = { width: 940, height: 620 } as const;
 
@@ -48,6 +51,22 @@ export async function enterMiniWindow(pinned: boolean): Promise<void> {
     if (isReachable(remembered, monitors)) {
       await window.setPosition(new PhysicalPosition(remembered.x, remembered.y));
     }
+  }
+}
+
+/** Grows the strip to show the up-next list, or shrinks it back. */
+export async function resizeMiniWindow(withQueue: boolean): Promise<void> {
+  if (!isDesktop()) return;
+  const { window, LogicalSize } = await api();
+  const size = withQueue ? MINI_QUEUE_SIZE : MINI_SIZE;
+  const target = new LogicalSize(size.width, size.height);
+  // The floor follows the target, or a shrink is clamped to the taller floor.
+  if (withQueue) {
+    await window.setMinSize(target);
+    await window.setSize(target);
+  } else {
+    await window.setSize(target);
+    await window.setMinSize(target);
   }
 }
 

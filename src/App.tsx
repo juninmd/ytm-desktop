@@ -6,10 +6,12 @@ import { DownloadsView } from "./components/DownloadsView";
 import { HomeView } from "./components/HomeView";
 import { LibraryView } from "./components/LibraryView";
 import { MiniPlayer } from "./components/MiniPlayer";
+import { LyricsCinema } from "./components/LyricsCinema";
 import { LyricsPanel } from "./components/LyricsPanel";
 import { PlayerBar } from "./components/PlayerBar";
 import { QueuePanel } from "./components/QueuePanel";
 import { ShortcutsDialog } from "./components/ShortcutsDialog";
+import { TrackInfoDialog } from "./components/TrackInfoDialog";
 import { SearchView } from "./components/SearchView";
 import { Sidebar } from "./components/Sidebar";
 import { SignInScreen } from "./components/SignInScreen";
@@ -23,7 +25,7 @@ import { NavigationProvider } from "./hooks/useNavigation";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { I18nProvider, useI18n } from "./lib/i18n";
 import { fetchRadio } from "./lib/music";
-import type { Collection, View } from "./types";
+import type { Collection, Track, View } from "./types";
 
 /** A placeholder for a collection the store has not indexed yet, keyed by id. */
 function STUB_COLLECTION(
@@ -89,6 +91,8 @@ function Workspace({
   const [queueOpen, setQueueOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [cinemaOpen, setCinemaOpen] = useState(false);
+  const [infoTrack, setInfoTrack] = useState<Track | null>(null);
 
   // The queue and the lyrics share the same slot, so each closes the other.
   const toggleQueue = () => {
@@ -101,7 +105,9 @@ function Workspace({
   };
   const miniMode = useMiniMode(() => player.notify(t("mini.windowFailed")));
   useShortcuts({
-    toggleQueue,
+    // In mini mode `q` opens the strip's own list, not the workspace panel.
+    toggleQueue: () => (miniMode.mini ? void miniMode.toggleQueue() : toggleQueue()),
+    toggleCinema: () => setCinemaOpen((open) => !open),
     toggleLyrics,
     toggleHelp: () => setHelpOpen((open) => !open),
     toggleMini: () => void miniMode.toggle(),
@@ -183,6 +189,10 @@ function Workspace({
       <MiniPlayer
         pinned={miniMode.pinned}
         onTogglePin={miniMode.togglePin}
+        queueOpen={miniMode.queueOpen}
+        onToggleQueue={() => void miniMode.toggleQueue()}
+        autoHide={miniMode.autoHide}
+        onToggleAutoHide={miniMode.toggleAutoHide}
         onExit={() => void miniMode.toggle()}
       />
     );
@@ -191,6 +201,7 @@ function Workspace({
   const navigation = {
     openAlbum: (id: string) => navigate({ kind: "album", id }),
     searchFor: (text: string) => setQuery(text),
+    showInfo: (track: Track) => setInfoTrack(track),
   };
 
   return (
@@ -221,7 +232,7 @@ function Workspace({
           </main>
 
           {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
-          {lyricsOpen && <LyricsPanel onClose={() => setLyricsOpen(false)} />}
+          {lyricsOpen && <LyricsPanel onClose={() => setLyricsOpen(false)} onCinema={() => setCinemaOpen(true)} />}
         </div>
 
         <PlayerBar
@@ -237,7 +248,9 @@ function Workspace({
             : ""}
         </div>
 
+        {cinemaOpen && <LyricsCinema onClose={() => setCinemaOpen(false)} />}
         {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
+        {infoTrack && <TrackInfoDialog track={infoTrack} onClose={() => setInfoTrack(null)} />}
 
         {notice && (
           <div className="pointer-events-none fixed inset-x-0 bottom-[104px] z-50 flex justify-center px-4">
