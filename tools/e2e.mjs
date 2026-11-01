@@ -162,6 +162,16 @@ await page.addInitScript(
             return 1;
           case "plugin:window|inner_size":
             return { width: 1320, height: 860 };
+          case "plugin:window|available_monitors":
+            return [
+              {
+                name: "stub",
+                position: { x: 0, y: 0 },
+                size: { width: 1920, height: 1080 },
+                scaleFactor: 1,
+                workArea: { position: { x: 0, y: 0 }, size: { width: 1920, height: 1080 } },
+              },
+            ];
           case "plugin:window|outer_position":
             return { x: 120, y: 80 };
           case "cookie_browsers":
@@ -438,6 +448,15 @@ check(
   "leaving mini mode restores the position",
   JSON.stringify((await windowCall("set_position")).at(-1)?.args).includes("120"),
 );
+
+// The strip remembers where it was left and returns there on the next use.
+await page.keyboard.press("Control+Shift+M");
+await page.waitForSelector("[data-mini]");
+await page.waitForTimeout(300);
+const reopened = JSON.stringify((await windowCall("set_position")).at(-1)?.args);
+check("mini mode reopens at its remembered position", reopened.includes("Physical") && reopened.includes("120"));
+await page.getByRole("button", { name: "Voltar ao modo completo" }).click();
+await page.waitForSelector("text=Resultados para");
 
 // 8. Downloading a track reaches the backend, and it shows under "Baixados".
 await page.getByRole("button", { name: "Baixar Faixa do Backend" }).first().click();
