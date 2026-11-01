@@ -14,6 +14,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { Cover } from "./Cover";
+import { PlaybackOptions } from "./PlaybackOptions";
 import { IconButton } from "./ui/IconButton";
 import { Slider } from "./ui/Slider";
 import { usePlayer } from "../hooks/usePlayer";
@@ -81,6 +82,7 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
             </span>
             <IconButton
               label={liked ? t("player.unlike") : t("player.like")}
+              hint="L"
               onClick={() => toggleLike(current.id)}
               className={cn("ml-1", liked && "text-accent hover:text-accent")}
             >
@@ -100,10 +102,10 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
 
       <div className="flex w-full max-w-[640px] flex-col items-center gap-1.5">
         <div className="flex items-center gap-3">
-          <IconButton label={t("player.shuffle")} active={state.shuffle} onClick={toggleShuffle}>
+          <IconButton label={t("player.shuffle")} hint="S" active={state.shuffle} onClick={toggleShuffle}>
             <Shuffle className="size-4" />
           </IconButton>
-          <IconButton label={t("player.previous")} onClick={previous} disabled={!current}>
+          <IconButton label={t("player.previous")} hint="P" onClick={previous} disabled={!current}>
             <SkipBack className="size-5 fill-current" />
           </IconButton>
           <button
@@ -119,11 +121,12 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
               <Play className="size-4 translate-x-px fill-current" />
             )}
           </button>
-          <IconButton label={t("player.next")} onClick={next} disabled={!current}>
+          <IconButton label={t("player.next")} hint="N" onClick={next} disabled={!current}>
             <SkipForward className="size-5 fill-current" />
           </IconButton>
           <IconButton
             label={state.repeat === "one" ? t("player.repeatOne") : state.repeat === "all" ? t("player.repeatAll") : t("player.repeatOff")}
+            hint="R"
             active={state.repeat !== "off"}
             onClick={cycleRepeat}
           >
@@ -149,8 +152,10 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
       </div>
 
       <div className="flex flex-1 items-center justify-end gap-1">
+        <PlaybackOptions />
         <IconButton
           label={lyricsOpen ? t("player.hideLyrics") : t("player.showLyrics")}
+          hint="Y"
           active={lyricsOpen}
           onClick={onToggleLyrics}
           disabled={!current}
@@ -159,21 +164,30 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
         </IconButton>
         <IconButton
           label={queueOpen ? t("player.hideQueue") : t("player.showQueue")}
+          hint="Q"
           active={queueOpen}
           onClick={onToggleQueue}
         >
           <ListMusic className="size-4" />
         </IconButton>
-        <IconButton label={state.muted ? t("player.unmute") : t("player.mute")} onClick={toggleMute}>
+        <IconButton label={state.muted ? t("player.unmute") : t("player.mute")} hint="M" onClick={toggleMute}>
           <VolumeIcon className="size-4" />
         </IconButton>
-        <Slider
-          label={t("player.volume")}
-          className="max-w-[110px]"
-          value={state.muted ? 0 : state.volume}
-          max={1}
-          onChange={setVolume}
-        />
+        <div
+          className="flex w-full max-w-[110px]"
+          onWheel={(event) => {
+            // Scroll over the volume to nudge it, like a hardware knob.
+            const step = event.deltaY < 0 ? 0.05 : -0.05;
+            setVolume(Math.min(1, Math.max(0, state.volume + step)));
+          }}
+        >
+          <Slider
+            label={t("player.volume")}
+            value={state.muted ? 0 : state.volume}
+            max={1}
+            onChange={setVolume}
+          />
+        </div>
       </div>
     </footer>
   );

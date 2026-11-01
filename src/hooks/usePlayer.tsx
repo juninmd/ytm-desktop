@@ -22,9 +22,14 @@ import {
 import {
   createInitialState,
   MAX_RESUME_TRACKS,
+  peekNext,
   reducer,
+  snapshotSession,
   type Preferences,
 } from "./playerReducer";
+import { useSleepTimer } from "./useSleepTimer";
+import { crossfadeDurationMs, crossfadeGains, shouldStartCrossfade } from "../lib/crossfade";
+import type { SleepTimer } from "../lib/sleepTimer";
 import { useI18n } from "../lib/i18n";
 
 /**
@@ -98,10 +103,13 @@ function loadPreferences(): Preferences {
       repeat: parsed.repeat === "all" || parsed.repeat === "one" ? parsed.repeat : "off",
       liked: Array.isArray(parsed.liked) ? parsed.liked : [],
       autoplay: typeof parsed.autoplay === "boolean" ? parsed.autoplay : true,
+      rate: typeof parsed.rate === "number" && Number.isFinite(parsed.rate) ? parsed.rate : 1,
+      crossfade:
+        typeof parsed.crossfade === "number" && Number.isFinite(parsed.crossfade) ? parsed.crossfade : 0,
       session: readSession(parsed.session),
     };
   } catch {
-    return { volume: 0.7, repeat: "off", liked: [], autoplay: true };
+    return { volume: 0.7, repeat: "off", liked: [], autoplay: true, rate: 1, crossfade: 0 };
   }
 }
 
@@ -137,11 +145,28 @@ export type PlayerApi = {
   appendRadio: (tracks: Track[]) => void;
   /** Turns the end-of-queue radio on or off. */
   toggleAutoplay: () => void;
+  /** Queues tracks right after the current one, or at the end. */
+  enqueue: (tracks: Track[], where: "next" | "last") => void;
+  /** Queue edits address upcoming entries by their position in play order. */
+  dequeue: (position: number) => void;
+  moveQueued: (from: number, to: number) => void;
+  clearUpcoming: () => void;
+  jump: (position: number) => void;
+  setRate: (value: number) => void;
+  /** Seconds of overlap between tracks; `0` keeps the change gapless. */
+  setCrossfade: (seconds: number) => void;
+  /** The armed sleep timer, if any. */
+  sleep: SleepTimer | null;
+  startSleep: (minutes: number) => void;
+  sleepAtEndOfTrack: () => void;
+  cancelSleep: () => void;
   /** Dismissible, short-lived message (e.g. a failed account write). */
   notice: string | null;
+  /** `warn` is an error the user should look at; `info` is a plain confirmation. */
+  noticeTone: "info" | "warn";
   dismissNotice: () => void;
   /** Shows a short-lived message (e.g. a failed download). */
-  notify: (message: string) => void;
+  notify: (message: string, tone?: "info" | "warn") => void;
   isLiked: (id: string) => boolean;
   isCurrent: (id: string) => boolean;
 };
@@ -157,8 +182,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [engine, setEngine] = useState<PlaybackEngine>("sim");
   const [resolverAvailable, setResolverAvailable] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<"info" | "warn">("warn");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Sleep-timer fade, multiplied into every volume applied to the element.
+  const fadeRef = useRef(1);
   const noticeTimer = useRef<number | undefined>(undefined);
+  // The next track, resolved and buffering on a second element so the change is
+  // gapless; and the overlap in progress when a crossfade is running.
+  const nextSlot = useRef<{ id: string; audio: HTMLAudioElement } | null>(null);
+  const fading = useRef<{ from: HTMLAudioElement; to: HTMLAudioElement; timer: number } | null>(null);
 
   // Latest state, readable from audio callbacks without re-subscribing.
   const stateRef = useRef(state);
@@ -192,17 +224,122 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (next && next.id !== currentId) void prefetchStream(next.id).catch(() => {});
   }, [currentId, state.cursor, state.order, state.queue]);
 
+  /** Stops an overlap that is no longer wanted and puts both elements back. */
+  const abortCrossfade = useCallback(() => {
+    const running = fading.current;
+    if (!running) return;
+    window.clearInterval(running.timer);
+    fading.current = null;
+    running.to.pause();
+    try {
+      running.to.currentTime = 0;
+    } catch {
+      // Not seekable yet; it is silent and paused either way.
+    }
+    running.to.volume = 0;
+    running.from.volume = stateRef.current.volume * fadeRef.current;
+  }, []);
+
+  /** Starts the overlap when the playing track is close enough to its end. */
+  const maybeCrossfade = useCallback(
+    (from: HTMLAudioElement) => {
+      const latest = stateRef.current;
+      const slot = nextSlot.current;
+      const remaining = from.duration - from.currentTime;
+      const ready =
+        slot !== null && slot.audio.readyState >= 2 && peekNext(latest)?.id === slot.id;
+      if (
+        !slot ||
+        !shouldStartCrossfade({
+          seconds: latest.crossfade,
+          remaining,
+          nextReady: ready,
+          playing: latest.isPlaying,
+          repeatOne: latest.repeat === "one",
+          stopAfterTrack: latest.stopAfterTrack,
+          alreadyFading: fading.current !== null,
+        })
+      ) {
+        return;
+      }
+
+      const to = slot.audio;
+      const total = crossfadeDurationMs(remaining, latest.crossfade, latest.rate);
+      to.volume = 0;
+      to.muted = latest.muted;
+      to.defaultPlaybackRate = latest.rate;
+      to.playbackRate = latest.rate;
+      void to.play().catch(abortCrossfade);
+
+      const began = performance.now();
+      const timer = window.setInterval(() => {
+        const progress = total > 0 ? (performance.now() - began) / total : 1;
+        const gain = crossfadeGains(progress);
+        const volume = stateRef.current.volume * fadeRef.current;
+        from.volume = volume * gain.out;
+        to.volume = volume * gain.in;
+        if (progress >= 1) {
+          window.clearInterval(timer);
+          fading.current = null;
+          from.pause();
+          dispatch({ type: "next", manual: false });
+        }
+      }, 50);
+      fading.current = { from, to, timer };
+    },
+    [abortCrossfade],
+  );
+
+  const releaseSlot = useCallback(() => {
+    const slot = nextSlot.current;
+    nextSlot.current = null;
+    if (!slot) return;
+    slot.audio.pause();
+    slot.audio.removeAttribute("src");
+    slot.audio.load();
+  }, []);
+
+  useEffect(
+    () => () => {
+      abortCrossfade();
+      releaseSlot();
+    },
+    [abortCrossfade, releaseSlot],
+  );
+
   // Load (or reload) the real stream whenever the track — or a replay — changes.
   useEffect(() => {
     if (!useRealAudio || !currentId) return;
 
     let cancelled = false;
-    const audio = new Audio();
+    // The preloaded element for this very track is taken over as-is (already
+    // buffered, possibly already playing mid-crossfade); any other is stale.
+    const slot = nextSlot.current;
+    // A preload that failed to load must not be adopted: no `error` event would follow.
+    const adopted = slot && slot.id === currentId && !slot.audio.error ? slot.audio : null;
+    if (fading.current && fading.current.to !== adopted) abortCrossfade();
+    if (adopted && fading.current?.to === adopted) {
+      window.clearInterval(fading.current.timer);
+      fading.current = null;
+    }
+    if (slot) {
+      nextSlot.current = null;
+      if (!adopted) {
+        slot.audio.pause();
+        slot.audio.removeAttribute("src");
+        slot.audio.load();
+      }
+    }
+
+    const audio = adopted ?? new Audio();
     audio.preload = "auto";
     audioRef.current = audio;
-    setEngine("sim");
+    if (!adopted) setEngine("sim");
 
-    const onTime = () => dispatch({ type: "sync", position: audio.currentTime });
+    const onTime = () => {
+      dispatch({ type: "sync", position: audio.currentTime });
+      maybeCrossfade(audio);
+    };
     const onMeta = () => {
       dispatch({ type: "duration", duration: audio.duration });
       // Metadata loaded: the element can actually play, so claim real audio.
@@ -218,8 +355,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         : await resolveRemoteStream(currentId);
       if (cancelled) return;
       usedLocal = info.local;
-      audio.volume = stateRef.current.volume;
+      audio.volume = stateRef.current.volume * fadeRef.current;
       audio.muted = stateRef.current.muted;
+      // Setting `src` resets the rate to the default, so both are set.
+      audio.defaultPlaybackRate = stateRef.current.rate;
+      audio.playbackRate = stateRef.current.rate;
       audio.src = info.local ? localStreamUrl(info.url) : info.url;
       audio.load();
       if (stateRef.current.isPlaying) {
@@ -246,7 +386,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onEnded = () => {
       const latest = stateRef.current;
       dispatch({ type: "ended" });
-      if (latest.repeat === "one") {
+      if (latest.repeat === "one" && !latest.stopAfterTrack) {
         audio.currentTime = 0;
         void audio.play().catch(() => {});
       }
@@ -257,11 +397,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     audio.addEventListener("error", onError);
     audio.addEventListener("ended", onEnded);
 
-    void start(true).catch(() => {
-      // No real stream available (yt-dlp missing, offline): the simulated
-      // transport takes over instead of leaving the user with a dead player.
-      if (!cancelled) setEngine("sim");
-    });
+    if (adopted) {
+      audio.volume = stateRef.current.volume * fadeRef.current;
+      audio.muted = stateRef.current.muted;
+      audio.defaultPlaybackRate = stateRef.current.rate;
+      audio.playbackRate = stateRef.current.rate;
+      if (stateRef.current.isPlaying && audio.paused) {
+        void audio.play().catch(() => {
+          if (!cancelled) setEngine("sim");
+        });
+      }
+      if (audio.readyState >= 1) onMeta(); // the duration is already known
+    } else {
+      void start(true).catch(() => {
+        // No real stream available (yt-dlp missing, offline): the simulated
+        // transport takes over instead of leaving the user with a dead player.
+        if (!cancelled) setEngine("sim");
+      });
+    }
 
     return () => {
       cancelled = true;
@@ -274,28 +427,67 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener("ended", onEnded);
       audioRef.current = null;
     };
-  }, [currentId, state.playToken, useRealAudio]);
+  }, [currentId, state.playToken, useRealAudio, abortCrossfade, maybeCrossfade]);
+
+  // Buffer the next track on its own element, so the change has no resolve gap.
+  const upcomingId = peekNext(state)?.id ?? null;
+  useEffect(() => {
+    if (!isDesktop() || engine !== "audio") return;
+    if (!upcomingId || state.repeat === "one") {
+      if (!fading.current) releaseSlot();
+      return;
+    }
+    if (nextSlot.current?.id === upcomingId) return;
+    releaseSlot();
+    let cancelled = false;
+    void resolveStream(upcomingId)
+      .then((info) => {
+        if (cancelled) return;
+        const audio = new Audio();
+        audio.preload = "auto";
+        audio.volume = 0;
+        audio.src = info.local ? localStreamUrl(info.url) : info.url;
+        audio.load();
+        nextSlot.current = { id: upcomingId, audio };
+      })
+      .catch(() => {
+        // Not resolvable yet: the change falls back to the ordinary load.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [upcomingId, engine, state.repeat, currentId, releaseSlot]);
 
   // Play/pause is driven by the real element when one is loaded.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || engine !== "audio") return;
+    if (!state.isPlaying) abortCrossfade();
     if (state.isPlaying) void audio.play().catch(() => {});
     else audio.pause();
-  }, [state.isPlaying, engine]);
+    // A sleep fade leaves the element silent; paused now, it is safe to restore.
+    audio.volume = stateRef.current.volume * fadeRef.current;
+  }, [state.isPlaying, engine, abortCrossfade]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.volume = state.volume;
+    audio.volume = state.volume * fadeRef.current;
     audio.muted = state.muted;
   }, [state.volume, state.muted, engine]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.defaultPlaybackRate = state.rate;
+    audio.playbackRate = state.rate;
+  }, [state.rate, engine]);
 
   // Simulated tick — only while no real audio is driving the playhead.
   useEffect(() => {
     if (!state.isPlaying || engine === "audio") return;
     const timer = window.setInterval(() => {
-      dispatch({ type: "tick", delta: TICK_MS / 1000 });
+      dispatch({ type: "tick", delta: (TICK_MS / 1000) * stateRef.current.rate });
     }, TICK_MS);
     return () => window.clearInterval(timer);
   }, [state.isPlaying, engine]);
@@ -311,18 +503,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       repeat: state.repeat,
       liked: state.liked,
       autoplay: state.autoplay,
-      session:
-        state.queue.length > 0
-          ? {
-              queue: state.queue.slice(0, MAX_RESUME_TRACKS),
-              // A queue index, not a cursor: `order` is not persisted, so the
-              // restored state rebuilds it as the identity.
-              cursor: state.order[state.cursor] ?? 0,
-              position: state.position,
-              shuffle: state.shuffle,
-              savedAt: Date.now(),
-            }
-          : undefined,
+      rate: state.rate,
+      crossfade: state.crossfade,
+      session: snapshotSession(stateRef.current),
     };
     writePreferences(persisted.current);
   }, [
@@ -330,7 +513,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     state.repeat,
     state.liked,
     state.autoplay,
+    state.rate,
+    state.crossfade,
     state.queue,
+    state.order,
     state.cursor,
     state.shuffle,
     state.isPlaying,
@@ -340,17 +526,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!state.isPlaying) return;
     const timer = window.setInterval(() => {
-      const latest = stateRef.current;
-      if (latest.queue.length === 0) return;
       persisted.current = {
         ...persisted.current,
-        session: {
-          queue: latest.queue.slice(0, MAX_RESUME_TRACKS),
-          cursor: latest.order[latest.cursor] ?? 0,
-          position: latest.position,
-          shuffle: latest.shuffle,
-          savedAt: Date.now(),
-        },
+        session: snapshotSession(stateRef.current),
       };
       writePreferences(persisted.current);
     }, 5000);
@@ -362,6 +540,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const seek = useCallback((seconds: number) => {
+    abortCrossfade(); // a seek during an overlap starts the overlap over, later
     const audio = audioRef.current;
     if (audio) {
       try {
@@ -371,10 +550,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     }
     dispatch({ type: "seek", position: seconds });
-  }, []);
+  }, [abortCrossfade]);
 
-  const flash = useCallback((message: string) => {
+  const flash = useCallback((message: string, tone: "info" | "warn" = "warn") => {
     setNotice(message);
+    setNoticeTone(tone);
     window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setNotice(null), 5000);
   }, []);
@@ -414,6 +594,54 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const toggleAutoplay = useCallback(() => {
     dispatch({ type: "autoplay" });
   }, []);
+
+  const enqueue = useCallback(
+    (tracks: Track[], where: "next" | "last") => {
+      if (tracks.length === 0) return;
+      const idle = stateRef.current.queue.length === 0;
+      dispatch({ type: "enqueue", tracks, where });
+      if (idle) return; // it just started playing; there is nothing to confirm
+      const one = tracks.length === 1;
+      const key =
+        where === "next"
+          ? one ? "queue.addedNext" : "queue.addedNextMany"
+          : one ? "queue.addedLast" : "queue.addedLastMany";
+      flash(t(key, { title: tracks[0].title, count: tracks.length }), "info");
+    },
+    [flash, t],
+  );
+
+  const dequeue = useCallback((position: number) => dispatch({ type: "dequeue", position }), []);
+  const moveQueued = useCallback(
+    (from: number, to: number) => dispatch({ type: "move", from, to }),
+    [],
+  );
+  const clearUpcoming = useCallback(() => dispatch({ type: "clear-upcoming" }), []);
+  const jump = useCallback((position: number) => dispatch({ type: "jump", position }), []);
+  const setRate = useCallback((value: number) => dispatch({ type: "rate", value }), []);
+  const setCrossfade = useCallback(
+    (seconds: number) => dispatch({ type: "crossfade", seconds }),
+    [],
+  );
+
+  const setStopAfterTrack = useCallback(
+    (value: boolean) => dispatch({ type: "stop-after", value }),
+    [],
+  );
+  const onSleepExpire = useCallback(() => {
+    dispatch({ type: "pause" });
+    flash(t("sleep.fired"), "info");
+  }, [flash, t]);
+  const { sleep, setSleep, startMinutes } = useSleepTimer({
+    getAudio: () => audioRef.current,
+    getVolume: () => stateRef.current.volume,
+    fade: fadeRef,
+    stopAfterTrack: state.stopAfterTrack,
+    setStopAfterTrack,
+    onExpire: onSleepExpire,
+  });
+  const sleepAtEndOfTrack = useCallback(() => setSleep({ kind: "track" }), [setSleep]);
+  const cancelSleep = useCallback(() => setSleep(null), [setSleep]);
 
   const dismissNotice = useCallback(() => {
     window.clearTimeout(noticeTimer.current);
@@ -507,13 +735,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         session.setPositionState({
           duration,
           position: Math.min(Math.max(state.position, 0), duration),
-          playbackRate: 1,
+          playbackRate: state.rate,
         });
       } catch {
         // Ignore an inconsistent position rather than throwing.
       }
     }
-  }, [current, state.position]);
+  }, [current, state.position, state.rate]);
 
   const api = useMemo<PlayerApi>(() => {
     const upNext = state.order
@@ -539,7 +767,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       syncLiked,
       appendRadio,
       toggleAutoplay,
+      enqueue,
+      dequeue,
+      moveQueued,
+      clearUpcoming,
+      jump,
+      setRate,
+      setCrossfade,
+      sleep,
+      startSleep: startMinutes,
+      sleepAtEndOfTrack,
+      cancelSleep,
       notice,
+      noticeTone,
       dismissNotice,
       notify: flash,
       isLiked: (id) => state.liked.includes(id),
@@ -556,7 +796,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     syncLiked,
     appendRadio,
     toggleAutoplay,
+    enqueue,
+    dequeue,
+    moveQueued,
+    clearUpcoming,
+    jump,
+    setRate,
+    setCrossfade,
+    sleep,
+    startMinutes,
+    sleepAtEndOfTrack,
+    cancelSleep,
     notice,
+    noticeTone,
     dismissNotice,
     flash,
   ]);

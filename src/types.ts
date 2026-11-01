@@ -74,6 +74,12 @@ export type PlayerState = {
   needsRadio: boolean;
   /** Whether to continue with the radio when the queue ends. */
   autoplay: boolean;
+  /** Playback speed multiplier; pitch is preserved by the audio element. */
+  rate: number;
+  /** Seconds of overlap between tracks; `0` is off (the change is still gapless). */
+  crossfade: number;
+  /** Sleep timer "end of track": pause as soon as the current track finishes. */
+  stopAfterTrack: boolean;
 };
 
 export type View =

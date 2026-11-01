@@ -64,6 +64,15 @@ revisada offline e sem credenciais.
 - Sessão restaurada **pausada** na próxima abertura (fila, faixa atual e posição).
 - Interface bilíngue (pt-BR / inglês); a troca também muda o idioma dos dados do catálogo (`hl`).
 - Login por OAuth 2.0 Device Flow no Rust; sair revoga a concessão.
+- Fila editável: *Tocar a seguir*, *Adicionar à fila*, remover, reordenar (arrastando ou pelo menu),
+  *Limpar fila* e *Ir para o álbum/artista*, por um menu de clique direito em qualquer faixa.
+- Timer de sono (5 a 60 min com fade de 10 s, ou ao fim da faixa) e velocidade de 0,5× a 2× com tom
+  preservado.
+- Transição sem pausas (gapless) e crossfade de 3 a 12 s entre faixas.
+- Modo mini (protótipo): a janela encolhe para uma faixa de 420×150, fixável acima das outras, com
+  lista "a seguir" opcional e controles que podem esconder até passar o mouse.
+- Letra em modo cinema (`c`): a letra sincronizada em tela cheia, com a linha atual ampliada.
+- Detalhes da faixa, selo de disponível offline e atalhos de teclado visíveis nas dicas dos controles.
 
 ## O que é real e o que não é
 
@@ -85,6 +94,13 @@ revisada offline e sem credenciais.
 | Biblioteca pessoal | **Real** com o cookie do navegador conectado: o InnerTube exige `Cookie` + `SAPISIDHASH`, não bearer token |
 | Curtir | **Real** com a biblioteca conectada (otimista, com rollback); só local sem ela |
 | Letras | **Real**, sincronizadas via LRCLIB (linha atual destacada, clique para buscar); sem tempo, usa o texto oficial do YouTube Music. Abrir o painel envia artista/título/álbum ao LRCLIB; nada é enviado com o painel fechado e nada é persistido |
+| Fila editável | **Real**: tocar a seguir, adicionar, remover, reordenar, limpar e pular, pelo menu de contexto e pelo painel da fila; a sessão é salva **em ordem de reprodução**, então edições e shuffle sobrevivem ao reinício |
+| Velocidade | **Real**: 0,5× a 2× no elemento de áudio com tom preservado, lembrada entre aberturas |
+| Timer de sono | **Real**: 5 a 60 min (o volume some nos últimos 10 s) ou *ao fim desta faixa*, imposto no reducer |
+| Gapless e crossfade | **Real**: a próxima faixa é resolvida e carregada num segundo `<audio>`, sem pausa na troca; com crossfade de 3 a 12 s os dois se sobrepõem em curva de potência igual. Pausar, buscar ou pular durante a sobreposição a cancela ou a adota sem falha. Não vale para repetir uma faixa, parada do timer de sono ou faixa ainda não carregada |
+| Letra em cinema | **Real**: a letra sincronizada como palco em janela cheia (capa grande, linha atual ampliada, fundo desfocado da capa, clique para buscar), com tela cheia |
+| Detalhes da faixa | **Real**: o que o catálogo informa (artista, álbum, ano, duração, reproduções) e o tamanho offline; campo que o catálogo não trouxe é omitido, nunca inventado |
+| Modo mini | **Protótipo**: a janela nativa encolhe para 420×150 (fixável acima das outras), volta ao tamanho e à posição anteriores e reabre onde foi deixada, se o ponto ainda estiver num monitor conectado. Verificado na janela real: `1320×860 → 420×150 → 1320×860`. `Ctrl Shift M` |
 | Armazenamento de token/cookie | Cofre de credenciais do SO via `keyring` (Windows Credential Manager / Keychain / Secret Service) |
 | Preview no navegador (`npm run dev`) | Catálogo simulado + transporte simulado, rotulados como tal na interface |
 
@@ -221,22 +237,33 @@ npm test
 
 ## Atalhos de teclado
 
+`?` (ou o botão de teclado na barra superior) abre a lista completa no app. Os atalhos também aparecem
+nas dicas dos controles.
+
 | Tecla | Ação |
 |---|---|
 | `Espaço` | Tocar / pausar |
 | `←` `→` | Voltar / avançar 5 s |
-| `↑` `↓` | Volume ±5 % |
-| `n` / `p` | Próxima / faixa anterior |
+| `↑` `↓` | Volume ±5 % (a roda do mouse sobre o volume faz o mesmo) |
+| `n` / `p`, `Ctrl` `→` / `←` | Próxima / faixa anterior |
 | `m` | Mudo |
+| `l` ou `Alt` `Shift` `B` | Curtir a faixa atual |
+| `s` / `r` | Embaralhar / alternar repetição |
+| `[` / `]` | Mais lento / mais rápido |
+| `q` ou `Alt` `Shift` `Q` | Mostrar ou ocultar a fila (no modo mini, a lista da faixa) |
+| `y` / `c` | Letra no painel / letra em modo cinema |
+| `/`, `Ctrl` `K` ou `Ctrl` `L` | Ir para a busca |
+| `Ctrl` `Shift` `M` | Alternar o modo mini |
 
-Ignorados enquanto você digita em um campo ou com foco em um botão, para não atrapalhar o
-comportamento esperado.
+Ignorados enquanto você digita em um campo. Um botão com foco mantém `Espaço` e `Enter`, e um slider
+com foco mantém as setas, então o resto do mapa continua valendo depois de clicar num controle. Com um
+menu ou diálogo aberto, os atalhos globais ficam de lado.
 
 ## Testes, lint e build
 
 ```bash
 npm run build                                   # tsc (strict) + vite build
-npm test                                        # Vitest: reducer do player e merge do catálogo
+npm test                                        # Vitest: reducer, fila, crossfade, atalhos, timer e merge do catálogo
 cargo fmt --check --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D clippy::all
 cargo test --manifest-path src-tauri/Cargo.toml --lib
@@ -261,7 +288,8 @@ cd src-tauri && YTM_LIVE=1 cargo test --lib
 console. `tools/e2e.mjs` injeta um `__TAURI_INTERNALS__.invoke` falso antes de o app carregar, então
 `isDesktop()` é verdadeiro e a UI **exclusiva do desktop** roda contra um stub: afirma que o
 catálogo real renderiza, que o banner de `yt-dlp` ausente aparece, que a biblioteca conectada carrega,
-que a busca devolve faixas do backend e que um like chega a `music_rate`. Gera `10` a `13`.
+que a busca devolve faixas do backend e que um like chega a `music_rate`. Também exercita o menu de contexto, a fila, a velocidade, o timer de sono, o crossfade, os detalhes, o
+cinema da letra, o modo mini e os atalhos. Gera `10` a `22`.
 `09-native-window.png` é uma captura avulsa do binário em execução (`cargo build`, depois
 `PrintWindow` na janela), por isso mostra a moldura real da janela.
 
@@ -281,7 +309,11 @@ src/
   data/catalog.ts          catálogo simulado embutido (só no preview do navegador)
   hooks/useCatalog.tsx     store do catálogo: InnerTube real ou o simulado
   hooks/playerReducer.ts   máquina de estados pura do player (testada)
-  hooks/usePlayer.tsx      reducer + sink <audio> real + Media Session
+  hooks/usePlayer.tsx      reducer + sink <audio> real (com gapless/crossfade) + Media Session
+  hooks/useSleepTimer.ts   contagem com fade de volume, ou "ao fim da faixa"
+  hooks/useShortcuts.ts    liga o mapa de teclado (lib/shortcuts.ts) uma única vez
+  hooks/useMiniMode.ts     estado do modo mini + redimensionar/restaurar a janela nativa
+  hooks/useLyrics.ts       letra da faixa atual + linha ativa (painel e cinema compartilham)
   hooks/useAuth.tsx        máquina de estados do device flow
   hooks/usePlayCollection.ts
   lib/auth.ts              fronteira IPC do Tauri + fallback de navegador
@@ -289,9 +321,15 @@ src/
   lib/catalog.ts           merge puro de catálogo (testado)
   lib/i18n.tsx             interface bilíngue (pt-BR / inglês)
   lib/cover.ts             capa determinística a partir de hash
+  lib/shortcuts.ts         tabela tecla -> comando; também alimenta a ajuda no app
+  lib/crossfade.ts         curvas de sobreposição e regra de início (testado)
+  lib/sleepTimer.ts        contas do timer (testado)
+  lib/miniWindow.ts        redimensiona/restaura a janela nativa no modo mini
   components/              Sidebar, TopBar, HomeView, CollectionView, ArtistView, SearchView,
                            LibraryView, TrackTable, PlayerBar, QueuePanel, SignInScreen,
-                           LibraryCookieForm, LyricsPanel, DownloadsView
+                           LibraryCookieForm, LyricsPanel, LyricsCinema, DownloadsView,
+                           PlaybackOptions (velocidade, sono, transição), MiniPlayer,
+                           TrackInfoDialog, ShortcutsDialog, ui/Menu, ui/Modal
 src-tauri/src/
   auth.rs                  device flow, cofre de token e cookie, assinatura SAPISIDHASH
   innertube.rs             cliente real do catálogo (search/browse/home/library/rate)
@@ -318,7 +356,10 @@ Preview no navegador (catálogo simulado):
 | ![Login](docs/screenshots/01-signin.png)<br/>**Login** · entrada com Google ou modo demonstração | ![Código do dispositivo](docs/screenshots/02-device-code.png)<br/>**Código do dispositivo** · fluxo de login no preview |
 | ![Home](docs/screenshots/03-home.png)<br/>**Início** · carrosséis de álbuns e playlists | ![Tocando e fila](docs/screenshots/04-playing-queue.png)<br/>**Tocando e fila** · faixa atual e próximas |
 | ![Álbum](docs/screenshots/05-album.png)<br/>**Álbum** · página de álbum | ![Biblioteca](docs/screenshots/06-library.png)<br/>**Biblioteca** · coleção do usuário |
-| ![Busca](docs/screenshots/07-search.png)<br/>**Busca** · resultados por aba | |
+| ![Busca](docs/screenshots/07-search.png)<br/>**Busca** · resultados por aba | ![Menu de contexto](docs/screenshots/17-desktop-context-menu.png)<br/>**Menu de contexto** · fila, álbum, detalhes |
+| ![Timer de sono](docs/screenshots/18-desktop-sleep-timer.png)<br/>**Timer de sono** · contagem regressiva | ![Atalhos](docs/screenshots/19-desktop-shortcuts.png)<br/>**Atalhos** · lista completa no app |
+| ![Modo mini](docs/screenshots/20-desktop-mini-mode.png)<br/>**Modo mini** · faixa de 420×150 | ![Modo mini com fila](docs/screenshots/21-desktop-mini-queue.png)<br/>**Mini com fila** · lista "a seguir" |
+| ![Letra em cinema](docs/screenshots/22-desktop-lyrics-cinema.png)<br/>**Letra em cinema** · palco em tela cheia | |
 
 <sub>Capturas do preview no navegador, com catálogo simulado. A janela nativa abaixo é a exceção: é uma captura do binário Tauri em execução.</sub>
 

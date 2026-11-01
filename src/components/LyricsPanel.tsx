@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Mic2, Music2, X } from "lucide-react";
-import { fetchLyrics, type Lyrics } from "../lib/music";
+import { useEffect, useRef } from "react";
+import { Loader2, Maximize2, Mic2, Music2, X } from "lucide-react";
+import { useLyrics } from "../hooks/useLyrics";
 import { usePlayer } from "../hooks/usePlayer";
 import { IconButton } from "./ui/IconButton";
 import { cn } from "../lib/cn";
@@ -14,79 +14,11 @@ import { useI18n } from "../lib/i18n";
  * official plain text is available it is shown as-is — no fake sync — and the
  * panel names the source it used.
  */
-export function LyricsPanel({ onClose }: { onClose: () => void }) {
-  const { current, state, seek } = usePlayer();
+export function LyricsPanel({ onClose, onCinema }: { onClose: () => void; onCinema: () => void }) {
+  const { seek } = usePlayer();
+  const { current, lyrics, error, activeIndex } = useLyrics();
   const { t } = useI18n();
-  const [loaded, setLoaded] = useState<{ id: string; lyrics: Lyrics } | null>(null);
-  const [failed, setFailed] = useState<{ id: string; message: string } | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
-  const cache = useRef(new Map<string, Lyrics>());
-
-  // A stable key: the query only changes when the track changes, not on every
-  // playback tick.
-  const query = useMemo(
-    () =>
-      current
-        ? {
-            id: current.id,
-            title: current.title,
-            artist: current.artist,
-            album: current.album,
-            duration: current.duration,
-          }
-        : null,
-    // The track's other fields are constant for a given id.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [current?.id],
-  );
-
-  useEffect(() => {
-    if (!query) {
-      setLoaded(null);
-      return;
-    }
-    const cached = cache.current.get(query.id);
-    if (cached) {
-      setLoaded({ id: query.id, lyrics: cached });
-      return;
-    }
-
-    let cancelled = false;
-    setFailed(null);
-    void fetchLyrics(query)
-      .then((result) => {
-        if (cancelled) return;
-        cache.current.set(query.id, result);
-        setLoaded({ id: query.id, lyrics: result });
-      })
-      .catch((cause) => {
-        if (cancelled) return;
-        setFailed({
-          id: query.id,
-          message: cause instanceof Error ? cause.message : String(cause),
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [query]);
-
-  // Only ever render lyrics that belong to the track on screen, so switching
-  // tracks cannot flash the previous song's lines.
-  const lyrics = loaded && query && loaded.id === query.id ? loaded.lyrics : null;
-  const error = failed && query && failed.id === query.id ? failed.message : null;
-
-  // Index of the line being sung right now (last line at or before the playhead).
-  const activeIndex = useMemo(() => {
-    if (!lyrics?.synced) return -1;
-    let index = -1;
-    for (let i = 0; i < lyrics.lines.length; i += 1) {
-      if (lyrics.lines[i].time <= state.position + 0.15) index = i;
-      else break;
-    }
-    return index;
-  }, [lyrics, state.position]);
 
   useEffect(() => {
     if (activeIndex < 0 || !lyrics?.synced) return;
@@ -101,9 +33,14 @@ export function LyricsPanel({ onClose }: { onClose: () => void }) {
           <Mic2 className="size-4" />
           {t("lyrics.title")}
         </h2>
-        <IconButton label={t("lyrics.close")} className="size-7" onClick={onClose}>
-          <X className="size-4" />
-        </IconButton>
+        <div className="flex items-center gap-0.5">
+          <IconButton label={t("cinema.open")} hint="C" className="size-7" onClick={onCinema} disabled={!current}>
+            <Maximize2 className="size-4" />
+          </IconButton>
+          <IconButton label={t("lyrics.close")} className="size-7" onClick={onClose}>
+            <X className="size-4" />
+          </IconButton>
+        </div>
       </header>
 
       {!current ? (

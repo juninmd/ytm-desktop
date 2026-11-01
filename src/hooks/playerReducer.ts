@@ -1,3 +1,4 @@
+import { MAX_CROSSFADE } from "../lib/crossfade";
 import type { PlayerState, RepeatMode, Track } from "../types";
 
 /**
@@ -23,21 +24,35 @@ export type Action =
   | { type: "like"; id: string }
   | { type: "sync-liked"; ids: string[] }
   | { type: "append"; tracks: Track[] }
-  | { type: "autoplay" };
+  | { type: "autoplay" }
+  | { type: "enqueue"; tracks: Track[]; where: "next" | "last" }
+  /** Drops an upcoming entry; `position` indexes `order`, like `jump` and `move`. */
+  | { type: "dequeue"; position: number }
+  | { type: "move"; from: number; to: number }
+  | { type: "clear-upcoming" }
+  | { type: "jump"; position: number }
+  | { type: "pause" }
+  | { type: "rate"; value: number }
+  | { type: "crossfade"; seconds: number }
+  | { type: "stop-after"; value: boolean };
 
 export type Preferences = {
   volume: number;
   repeat: RepeatMode;
   liked: string[];
   autoplay: boolean;
+  rate: number;
+  crossfade: number;
   /** The previous session, so the player can offer to continue where it stopped. */
-  session?: {
-    queue: Track[];
-    cursor: number;
-    position: number;
-    shuffle: boolean;
-    savedAt: number;
-  };
+  session?: Session;
+};
+
+export type Session = {
+  queue: Track[];
+  cursor: number;
+  position: number;
+  shuffle: boolean;
+  savedAt: number;
 };
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -45,7 +60,15 @@ export const DEFAULT_PREFERENCES: Preferences = {
   repeat: "off",
   liked: [],
   autoplay: true,
+  rate: 1,
+  crossfade: 0,
 };
+
+export const MIN_RATE = 0.25;
+export const MAX_RATE = 3;
+
+/** Speeds offered in the UI; the reducer accepts anything within the bounds. */
+export const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
 /** How many tracks of a session are kept for the next launch. */
 export const MAX_RESUME_TRACKS = 200;
@@ -79,6 +102,9 @@ export function createInitialState(preferences: Preferences = DEFAULT_PREFERENCE
     playToken: 0,
     needsRadio: false,
     autoplay: preferences.autoplay,
+    rate: clamp(preferences.rate, MIN_RATE, MAX_RATE),
+    crossfade: Math.round(clamp(preferences.crossfade, 0, MAX_CROSSFADE)),
+    stopAfterTrack: false,
   };
 
   const session = preferences.session;
@@ -113,6 +139,73 @@ export function currentTrack(state: PlayerState): Track | null {
   return state.queue[state.order[state.cursor]] ?? null;
 }
 
+/** How far behind the cursor a truncated session keeps, so "previous" still works. */
+const RESUME_LOOKBEHIND = 20;
+
+/**
+ * The session to persist. The queue is written in *play order*, because the
+ * restored state rebuilds `order` as the identity: that keeps shuffle and the
+ * user's own queue edits intact across a restart.
+ */
+export function snapshotSession(state: PlayerState): Session | undefined {
+  if (state.queue.length === 0) return undefined;
+  const ordered = state.order.flatMap((index) => (state.queue[index] ? [state.queue[index]] : []));
+  const start = Math.max(
+    0,
+    Math.min(state.cursor - RESUME_LOOKBEHIND, ordered.length - MAX_RESUME_TRACKS),
+  );
+  return {
+    queue: ordered.slice(start, start + MAX_RESUME_TRACKS),
+    cursor: state.cursor - start,
+    position: state.position,
+    shuffle: state.shuffle,
+    savedAt: Date.now(),
+  };
+}
+
+/**
+ * Moves to `cursor` and plays. When the destination is the same track (a
+ * duplicate in the queue) the token is bumped, because the audio element only
+ * reloads when the track id or the token changes.
+ */
+function arrive(state: PlayerState, cursor: number): PlayerState {
+  const target = state.queue[state.order[cursor]];
+  const same = target !== undefined && target.id === currentTrack(state)?.id;
+  return {
+    ...state,
+    cursor,
+    position: 0,
+    isPlaying: true,
+    playToken: same ? state.playToken + 1 : state.playToken,
+  };
+}
+
+/** A track played to its end, from either the real element or the simulation. */
+function finishTrack(state: PlayerState, track: Track): PlayerState {
+  if (state.stopAfterTrack) {
+    // The sleep timer's "end of track": park on whatever comes next, paused.
+    const next = step(state, 1);
+    return {
+      ...state,
+      cursor: next ?? state.cursor,
+      isPlaying: false,
+      position: 0,
+      stopAfterTrack: false,
+      needsRadio: false,
+      playToken: state.playToken + 1,
+    };
+  }
+  if (state.repeat === "one") return { ...state, position: 0 };
+
+  const next = step(state, 1);
+  if (next === null) {
+    // End of queue, repeat off: if autoplay is on, ask for a radio so the
+    // music does not just stop.
+    return { ...state, isPlaying: false, position: track.duration, needsRadio: state.autoplay };
+  }
+  return arrive(state, next);
+}
+
 /** Advances the cursor. Returns null when the queue is exhausted and repeat is off. */
 function step(state: PlayerState, direction: 1 | -1): number | null {
   const size = state.order.length;
@@ -137,6 +230,7 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
         isPlaying: true,
         position: 0,
         needsRadio: false,
+        stopAfterTrack: false,
         // Bumped so replaying the current track reloads its audio element.
         playToken: state.playToken + 1,
       };
@@ -152,21 +246,7 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
       // A track whose duration the API omitted (`0`) must not auto-advance on
       // every tick; it just plays on until the real element reports a length.
       if (track.duration <= 0 || position < track.duration) return { ...state, position };
-
-      if (state.repeat === "one") return { ...state, position: 0 };
-
-      const next = step(state, 1);
-      if (next === null) {
-        // End of queue, repeat off: park on the last track, paused. If autoplay
-        // is on, ask for a radio so the music does not just stop.
-        return {
-          ...state,
-          isPlaying: false,
-          position: track.duration,
-          needsRadio: state.autoplay,
-        };
-      }
-      return { ...state, cursor: next, position: 0 };
+      return finishTrack(state, track);
     }
 
     /** The real audio element reporting its playhead. */
@@ -199,27 +279,26 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
       }
       const next = step(state, 1);
       if (next === null) return { ...state, needsRadio: state.autoplay };
-      return { ...state, cursor: next, position: 0, isPlaying: true };
+      return arrive(state, next);
     }
 
     case "previous": {
       if (state.position > 3) return { ...state, position: 0 };
       const previous = step(state, -1);
       if (previous === null) return { ...state, position: 0 };
-      return { ...state, cursor: previous, position: 0, isPlaying: true };
+      return arrive(state, previous);
     }
 
     /** The real audio element finishing a track. */
     case "ended": {
-      if (state.repeat === "one") return { ...state, position: 0 };
-      const next = step(state, 1);
-      if (next === null) {
+      const track = currentTrack(state);
+      if (!track) return state;
+      if (!state.stopAfterTrack && state.repeat !== "one" && step(state, 1) === null) {
         return { ...state, isPlaying: false, position: 0, needsRadio: state.autoplay };
       }
-      // A one-track queue under repeat-all lands on the same cursor; bump the
-      // token so the load effect restarts the element instead of going silent.
-      if (next === state.cursor) return { ...state, position: 0, playToken: state.playToken + 1 };
-      return { ...state, cursor: next, position: 0, isPlaying: true };
+      // A one-track queue under repeat-all lands on the same cursor; `arrive`
+      // bumps the token so the load effect restarts the element.
+      return finishTrack(state, track);
     }
 
     case "volume":
@@ -236,7 +315,7 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
         ...state,
         shuffle,
         order: shuffle
-          ? shuffledOrder(state.queue.length, state.cursor)
+          ? shuffledOrder(state.queue.length, current)
           : identityOrder(state.queue.length),
         cursor: shuffle ? 0 : current,
       };
@@ -283,5 +362,90 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
 
     case "autoplay":
       return { ...state, autoplay: !state.autoplay, needsRadio: false };
+
+    case "enqueue": {
+      if (action.tracks.length === 0) return state;
+      // Nothing to queue behind: queueing into silence just starts playing.
+      if (state.queue.length === 0) {
+        return reducer(state, { type: "play", queue: action.tracks, startIndex: 0 });
+      }
+      // Parked at the end waiting for a radio: the queued tracks are the answer.
+      if (state.needsRadio) return reducer(state, { type: "append", tracks: action.tracks });
+      const base = state.queue.length;
+      const added = action.tracks.map((_, index) => base + index);
+      const at = action.where === "next" ? state.cursor + 1 : state.order.length;
+      return {
+        ...state,
+        queue: [...state.queue, ...action.tracks],
+        order: [...state.order.slice(0, at), ...added, ...state.order.slice(at)],
+        needsRadio: false,
+      };
+    }
+
+    case "dequeue": {
+      if (!isUpcoming(state, action.position)) return state;
+      const removed = state.order[action.position];
+      return {
+        ...state,
+        queue: state.queue.filter((_, index) => index !== removed),
+        order: state.order
+          .filter((_, position) => position !== action.position)
+          .map((index) => (index > removed ? index - 1 : index)),
+      };
+    }
+
+    case "move": {
+      if (!isUpcoming(state, action.from) || !isUpcoming(state, action.to)) return state;
+      if (action.from === action.to) return state;
+      const order = state.order.slice();
+      const [moved] = order.splice(action.from, 1);
+      order.splice(action.to, 0, moved);
+      return { ...state, order };
+    }
+
+    case "clear-upcoming": {
+      if (state.order.length <= state.cursor + 1) return state;
+      return {
+        ...state,
+        queue: state.order.slice(0, state.cursor + 1).map((index) => state.queue[index]),
+        order: identityOrder(state.cursor + 1),
+        needsRadio: false,
+      };
+    }
+
+    case "jump": {
+      if (action.position < 0 || action.position >= state.order.length) return state;
+      const landed = arrive(state, action.position);
+      return { ...landed, needsRadio: false, playToken: state.playToken + 1 };
+    }
+
+    case "pause":
+      return state.isPlaying ? { ...state, isPlaying: false } : state;
+
+    case "rate":
+      return { ...state, rate: clamp(action.value, MIN_RATE, MAX_RATE) };
+
+    case "stop-after":
+      return { ...state, stopAfterTrack: action.value };
+
+    case "crossfade":
+      return { ...state, crossfade: Math.round(clamp(action.seconds, 0, MAX_CROSSFADE)) };
   }
+}
+
+/** The track that will play after the current one, or `null` at the end of the queue. */
+export function peekNext(state: PlayerState): Track | null {
+  const position = step(state, 1);
+  return position === null ? null : (state.queue[state.order[position]] ?? null);
+}
+
+/** Whether `position` points at something still to come (not the playing track). */
+function isUpcoming(state: PlayerState, position: number): boolean {
+  return Number.isInteger(position) && position > state.cursor && position < state.order.length;
+}
+
+/** The next preset speed above or below `rate` (clamped at the ends). */
+export function nextRate(rate: number, direction: 1 | -1): number {
+  if (direction === 1) return RATES.find((preset) => preset > rate + 1e-9) ?? RATES[RATES.length - 1];
+  return [...RATES].reverse().find((preset) => preset < rate - 1e-9) ?? RATES[0];
 }
