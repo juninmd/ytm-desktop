@@ -160,6 +160,19 @@ describe("playback reducer", () => {
     expect(state.volume).toBe(0.5);
   });
 
+  it("keeps the volume inside 0..1 so the audio element never throws", () => {
+    const state = createInitialState(prefs());
+    expect(reducer(state, { type: "volume", value: 1.0000000000000002 }).volume).toBe(1);
+    expect(reducer(state, { type: "volume", value: -0.2 }).volume).toBe(0);
+    expect(reducer(state, { type: "volume", value: Number.NaN }).volume).toBe(0);
+  });
+
+  it("ignores a seek to a non-finite position instead of corrupting the playhead", () => {
+    const state = playing();
+    expect(reducer(state, { type: "seek", position: Number.NaN })).toBe(state);
+    expect(reducer(state, { type: "seek", position: Number.POSITIVE_INFINITY })).toBe(state);
+  });
+
   it("toggles a like and seeds it from the account without duplicates", () => {
     let state = createInitialState(prefs());
     state = reducer(state, { type: "like", id: "a" });

@@ -267,7 +267,7 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
 
     case "seek": {
       const track = currentTrack(state);
-      if (!track) return state;
+      if (!track || !Number.isFinite(action.position)) return state;
       const max = track.duration > 0 ? track.duration : Number.POSITIVE_INFINITY;
       const position = Math.min(Math.max(action.position, 0), max);
       return { ...state, position };
@@ -301,8 +301,11 @@ export function reducer(state: PlayerState, action: Action): PlayerState {
       return finishTrack(state, track);
     }
 
-    case "volume":
-      return { ...state, volume: action.value, muted: action.value === 0 ? state.muted : false };
+    case "volume": {
+      // `audio.volume` throws outside 0..1 and a NaN would poison the scrubber maths.
+      const value = clamp(action.value, 0, 1);
+      return { ...state, volume: value, muted: value === 0 ? state.muted : false };
+    }
 
     case "toggle-mute":
       return { ...state, muted: !state.muted };
