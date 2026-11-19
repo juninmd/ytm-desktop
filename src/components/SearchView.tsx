@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, SearchX } from "lucide-react";
 import { useCatalog, type SearchFilter } from "../hooks/useCatalog";
 import { CollectionCard } from "./CollectionCard";
@@ -30,8 +30,14 @@ export function SearchView({
   const [continuation, setContinuation] = useState<string | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  // Bumped on every new search so a "load more" still in flight cannot append
+  // the previous query's page to the new results.
+  const generation = useRef(0);
 
   useEffect(() => {
+    generation.current += 1;
+    setMoreError(null);
     const term = query.trim();
     if (term.length === 0) {
       setResults({ collections: [], tracks: [] });
@@ -92,9 +98,12 @@ export function SearchView({
 
   async function loadMore() {
     if (!continuation) return;
+    const started = generation.current;
     setState("loading");
+    setMoreError(null);
     try {
       const page = await searchMore(continuation);
+      if (started !== generation.current) return;
       setResults((previous) => ({
         collections: mergeById(previous.collections, page.collections),
         tracks: mergeById(previous.tracks, page.tracks),
@@ -104,8 +113,10 @@ export function SearchView({
       setContinuation(page.continuation ?? null);
       setState("idle");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      setState("error");
+      if (started !== generation.current) return;
+      // Keep the results already on screen; only the extra page failed.
+      setMoreError(cause instanceof Error ? cause.message : String(cause));
+      setState("idle");
     }
   }
 
@@ -176,6 +187,12 @@ export function SearchView({
                 <TrackTable tracks={results.tracks} showAlbum={false} />
               </div>
             </section>
+          )}
+
+          {moreError && (
+            <p role="alert" className="mt-6 text-center text-sm text-muted">
+              {t("search.failed")}: {moreError}
+            </p>
           )}
 
           {continuation && (
