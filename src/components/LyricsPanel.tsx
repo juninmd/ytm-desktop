@@ -4,6 +4,7 @@ import { useLyrics } from "../hooks/useLyrics";
 import { usePlayer } from "../hooks/usePlayer";
 import { IconButton } from "./ui/IconButton";
 import { cn } from "../lib/cn";
+import { scrollBehavior } from "../lib/motion";
 import { useI18n } from "../lib/i18n";
 
 /**
@@ -23,7 +24,7 @@ export function LyricsPanel({ onClose, onCinema }: { onClose: () => void; onCine
   useEffect(() => {
     if (activeIndex < 0 || !lyrics?.synced) return;
     const node = scroller.current?.querySelector<HTMLElement>(`[data-line="${activeIndex}"]`);
-    node?.scrollIntoView({ block: "center", behavior: "smooth" });
+    node?.scrollIntoView({ block: "center", behavior: scrollBehavior() });
   }, [activeIndex, lyrics]);
 
   return (

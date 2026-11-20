@@ -6,6 +6,7 @@ import { Slider } from "./ui/Slider";
 import { useLyrics } from "../hooks/useLyrics";
 import { usePlayer } from "../hooks/usePlayer";
 import { cn } from "../lib/cn";
+import { scrollBehavior } from "../lib/motion";
 import { coverStyle } from "../lib/cover";
 import { setFullscreen } from "../lib/fullscreen";
 import { formatTime } from "../lib/format";
@@ -28,7 +29,7 @@ export function LyricsCinema({ onClose }: { onClose: () => void }) {
     if (activeIndex < 0) return;
     scroller.current
       ?.querySelector<HTMLElement>(`[data-line="${activeIndex}"]`)
-      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+      ?.scrollIntoView({ block: "center", behavior: scrollBehavior() });
   }, [activeIndex]);
 
   useEffect(() => {
