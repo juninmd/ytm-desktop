@@ -30,6 +30,7 @@ import {
 } from "../lib/music";
 import { isDesktop } from "../lib/auth";
 import { EMPTY_MAPS, mergeCatalog, type CatalogMaps } from "../lib/catalog";
+import { createLatest } from "../lib/latest";
 import type { Collection, Shelf, Track } from "../types";
 
 /**
@@ -116,19 +117,23 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
 
   const mapsRef = useRef(maps);
   mapsRef.current = maps;
+  // A library load that resolves after sign-out (or after a newer load) must not repopulate it.
+  const libraryLoads = useRef(createLatest());
 
   const merge = useCallback((page: CatalogPage) => {
     setMaps((previous) => mergeCatalog(previous, page));
   }, []);
 
   const loadLibrary = useCallback(async () => {
+    const ticket = libraryLoads.current.next();
     try {
       const data = await fetchLibrary();
+      if (!libraryLoads.current.isCurrent(ticket)) return;
       merge({ collections: data.collections, tracks: data.tracks });
       setLibrary(data);
     } catch {
       // The personal library is optional; search and home still work.
-      setLibrary({ available: false, collections: [], tracks: [] });
+      if (libraryLoads.current.isCurrent(ticket)) setLibrary({ available: false, collections: [], tracks: [] });
     }
   }, [merge]);
 
@@ -263,7 +268,9 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   );
 
   const clearCookies = useCallback(async () => {
+    libraryLoads.current.invalidate();
     await clearLibraryCookies();
+    libraryLoads.current.invalidate();
     setLibrary({ available: false, collections: [], tracks: [] });
   }, []);
 
