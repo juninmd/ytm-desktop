@@ -31,6 +31,8 @@ export function SearchView({
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [moreError, setMoreError] = useState<string | null>(null);
+  // Bumped by "try again" so the search effect re-runs for the same query and filter.
+  const [attempt, setAttempt] = useState(0);
   // Bumped on every new search so a "load more" still in flight cannot append
   // the previous query's page to the new results.
   const generation = useRef(0);
@@ -71,13 +73,13 @@ export function SearchView({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [query, filter, search]);
+  }, [query, filter, search, attempt]);
 
   const empty = results.collections.length === 0 && results.tracks.length === 0;
 
   if (state === "loading" && empty) {
     return (
-      <div className="grid place-items-center px-6 py-24 text-center text-muted">
+      <div role="status" aria-label={t("search.loading")} className="grid place-items-center px-6 py-24 text-center text-muted">
         <Loader2 className="size-6 animate-spin" />
       </div>
     );
@@ -85,10 +87,17 @@ export function SearchView({
 
   if (state === "error") {
     return (
-      <div className="grid place-items-center px-6 py-24 text-center">
+      <div role="alert" className="grid place-items-center px-6 py-24 text-center">
         <SearchX className="size-8 text-subtle" />
         <p className="mt-4 text-lg font-semibold">{t("search.failed")}</p>
         <p className="mt-1 max-w-[46ch] text-sm text-muted">{error}</p>
+        <button
+          type="button"
+          onClick={() => setAttempt((value) => value + 1)}
+          className="mt-5 rounded-full border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
+        >
+          {t("common.retry")}
+        </button>
       </div>
     );
   }
