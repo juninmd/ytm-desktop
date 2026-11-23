@@ -10,9 +10,11 @@ type Props = {
   filled?: boolean;
   className?: string;
   disabled?: boolean;
+  /** What screen readers announce; defaults to the percentage (fits volume, not time). */
+  valueText?: string;
 };
 
-export function Slider({ value, max, onChange, label, filled = true, className, disabled }: Props) {
+export function Slider({ value, max, onChange, label, filled = true, className, disabled, valueText }: Props) {
   const percent = max > 0 ? Math.min(Math.max(value / max, 0), 1) * 100 : 0;
   const track = filled
     ? `linear-gradient(to right, #ffffff ${percent}%, #3a3a46 ${percent}%)`
@@ -24,7 +26,7 @@ export function Slider({ value, max, onChange, label, filled = true, className, 
       className={cn("slider", className)}
       style={{ "--track": track } as CSSProperties}
       aria-label={label}
-      aria-valuetext={`${Math.round(percent)}%`}
+      aria-valuetext={valueText ?? `${Math.round(percent)}%`}
       min={0}
       max={max}
       step={max / 1000}
