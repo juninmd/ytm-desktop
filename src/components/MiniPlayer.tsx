@@ -109,6 +109,7 @@ export function MiniPlayer({
               </span>
               <Slider
                 label={t("player.position")}
+                valueText={`${formatTime(state.position)} / ${formatTime(current?.duration ?? 0)}`}
                 value={state.position}
                 max={current && current.duration > 0 ? current.duration : 1}
                 onChange={seek}

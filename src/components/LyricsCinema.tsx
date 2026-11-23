@@ -161,6 +161,7 @@ export function LyricsCinema({ onClose }: { onClose: () => void }) {
         <span className="w-10 text-right text-xs text-subtle tabular-nums">{formatTime(state.position)}</span>
         <Slider
           label={t("player.position")}
+          valueText={`${formatTime(state.position)} / ${formatTime(current?.duration ?? 0)}`}
           value={state.position}
           max={current && current.duration > 0 ? current.duration : 1}
           onChange={seek}
