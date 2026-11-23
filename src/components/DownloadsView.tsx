@@ -5,7 +5,7 @@ import { Cover } from "./Cover";
 import { IconButton } from "./ui/IconButton";
 import { cn } from "../lib/cn";
 import { useI18n } from "../lib/i18n";
-import { formatTime } from "../lib/format";
+import { formatBytes, formatTime } from "../lib/format";
 
 /**
  * Tracks saved to disk for offline playback. Playing starts the downloaded
@@ -33,7 +33,7 @@ export function DownloadsView() {
     <div className="px-6 pb-10">
       <h1 className="pt-2 text-2xl font-bold tracking-tight">{t("downloads.title")}</h1>
       <p className="mt-1 text-sm text-muted">
-        {t(downloads.length === 1 ? "downloads.countOne" : "downloads.count", { count: downloads.length, size: formatBytes(totalBytes) })}
+        {t(downloads.length === 1 ? "downloads.countOne" : "downloads.count", { count: downloads.length, size: formatSize(totalBytes) })}
       </p>
 
       <div className="mt-6 rounded-lg bg-black/25 py-2">
@@ -69,7 +69,7 @@ export function DownloadsView() {
                 </span>
               </button>
               <span className="hidden text-xs text-subtle tabular-nums sm:block">
-                {formatBytes(entry.bytes)}
+                {formatSize(entry.bytes)}
               </span>
               <span className="w-10 text-right text-xs text-muted tabular-nums">
                 {entry.duration > 0 ? formatTime(entry.duration) : "--:--"}
@@ -96,8 +96,7 @@ export function DownloadsView() {
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "—";
-  const megabytes = bytes / (1024 * 1024);
-  return `${megabytes.toFixed(1)} MB`;
+/** Unknown size (0) shows a dash; real sizes use the shared binary-unit formatter. */
+function formatSize(bytes: number): string {
+  return bytes > 0 ? formatBytes(bytes) : "—";
 }
