@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { Loader2, Maximize2, Mic2, Music2, X } from "lucide-react";
+import { Maximize2, Mic2, Music2, X } from "lucide-react";
+import { EmptyState, Spinner } from "@juninmd/sonido";
 import { useLyrics } from "../hooks/useLyrics";
 import { usePlayer } from "../hooks/usePlayer";
 import { IconButton } from "./ui/IconButton";
@@ -35,19 +36,22 @@ export function LyricsPanel({ onClose, onCinema }: { onClose: () => void; onCine
           {t("lyrics.title")}
         </h2>
         <div className="flex items-center gap-0.5">
-          <IconButton label={t("cinema.open")} hint="C" className="size-7" onClick={onCinema} disabled={!current}>
+          <IconButton label={t("cinema.open")} hint="C" className="app-icon-sm" onClick={onCinema} disabled={!current}>
             <Maximize2 className="size-4" />
           </IconButton>
-          <IconButton label={t("lyrics.close")} className="size-7" onClick={onClose}>
+          <IconButton label={t("lyrics.close")} className="app-icon-sm" onClick={onClose}>
             <X className="size-4" />
           </IconButton>
         </div>
       </header>
 
       {!current ? (
-        <div className="grid flex-1 place-items-center px-6 text-center">
-          <Music2 className="size-6 text-subtle" />
-          <p className="mt-3 text-sm text-muted">{t("lyrics.empty")}</p>
+        <div className="flex flex-1 items-center px-4">
+          <EmptyState
+            className="w-full"
+            icon={<Music2 className="size-6" />}
+            title={t("lyrics.empty")}
+          />
         </div>
       ) : error && !lyrics ? (
         <div className="grid flex-1 place-items-center px-6 text-center">
@@ -55,7 +59,7 @@ export function LyricsPanel({ onClose, onCinema }: { onClose: () => void; onCine
         </div>
       ) : !lyrics ? (
         <div className="grid flex-1 place-items-center">
-          <Loader2 className="size-5 animate-spin text-muted" />
+          <Spinner size={20} label={t("lyrics.title")} />
         </div>
       ) : (
         <>

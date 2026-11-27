@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { Button } from "@juninmd/sonido";
 import { cn } from "../../lib/cn";
 
 type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label"> & {
@@ -10,22 +11,24 @@ type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label"> & {
   children: ReactNode;
 };
 
+/**
+ * Icon-only control: Sonido's `Button` with `size="icon"`, so the hover ring,
+ * pressed state and disabled styling come from the design system. Only the
+ * density (32px) and the "active" accent stay local.
+ */
 export function IconButton({ label, active, hint, className, children, ...rest }: Props) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="icon"
       aria-label={label}
       title={hint ? `${label} (${hint})` : label}
       aria-pressed={active}
-      className={cn(
-        "grid size-8 shrink-0 place-items-center rounded-full text-muted transition-colors",
-        "hover:bg-white/8 hover:text-fg disabled:pointer-events-none disabled:opacity-35",
-        active && "text-accent hover:text-accent",
-        className,
-      )}
+      className={cn("app-icon", active && "app-icon--active", className)}
       {...rest}
     >
       {children}
-    </button>
+    </Button>
   );
 }

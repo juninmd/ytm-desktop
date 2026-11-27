@@ -1,4 +1,5 @@
-import { Trash2 } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
+import { EmptyState } from "@juninmd/sonido";
 import { useCatalog } from "../hooks/useCatalog";
 import { usePlayer } from "../hooks/usePlayer";
 import { Cover } from "./Cover";
@@ -18,11 +19,13 @@ export function DownloadsView() {
 
   if (downloads.length === 0) {
     return (
-      <div className="px-6 pb-10">
-        <h1 className="pt-2 text-2xl font-bold tracking-tight">{t("downloads.title")}</h1>
-        <p className="mt-6 max-w-[52ch] text-sm text-muted">
-          {t("downloads.empty")}
-        </p>
+      <div className="px-6 py-6">
+        <EmptyState
+          icon={<Download className="size-7" />}
+          title={t("downloads.title")}
+          description={t("downloads.empty")}
+          titleAs="h1"
+        />
       </div>
     );
   }

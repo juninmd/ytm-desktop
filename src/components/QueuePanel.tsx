@@ -99,7 +99,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
       {menu.node}
       <header className="flex items-center justify-between px-4 pt-4 pb-2">
         <h2 className="text-sm font-semibold">{t("queue.title")}</h2>
-        <IconButton label={t("queue.close")} className="size-7" onClick={onClose}>
+        <IconButton label={t("queue.close")} className="app-icon-sm" onClick={onClose}>
           <X className="size-4" />
         </IconButton>
       </header>
@@ -276,7 +276,7 @@ function QueueRow({
       </button>
       <IconButton
         label={liked ? t("player.unlike") : t("player.like")}
-        className={cn("size-7", liked && "text-accent hover:text-accent")}
+        className={cn("app-icon-sm", liked && "app-icon--accent")}
         onClick={() => onLike(track.id)}
       >
         <Heart className={cn("size-4", liked && "fill-accent")} />
@@ -284,7 +284,7 @@ function QueueRow({
       <IconButton
         label={t("queue.more", { title: track.title })}
         aria-haspopup="menu"
-        className="size-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        className="app-icon-sm opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
         onClick={(event) => onMenu(anchorFromElement(event.currentTarget, "down", "end"), true)}
       >
         <Ellipsis className="size-4" />

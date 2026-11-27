@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Play } from "lucide-react";
+import { Play } from "lucide-react";
+import { Spinner } from "@juninmd/sonido";
 import { useCatalog } from "../hooks/useCatalog";
 import { usePlayCollection } from "../hooks/usePlayCollection";
 import { heroStyle } from "../lib/cover";
@@ -45,7 +46,7 @@ export function ArtistView({
     return (
       <div className="grid place-items-center px-6 py-24 text-center">
         {loading ? (
-          <Loader2 className="size-6 animate-spin text-muted" />
+          <Spinner size={24} label={t("collection.loadingFailed")} />
         ) : failed ? (
           <p className="text-sm text-muted">{t("collection.loadingFailed")}</p>
         ) : null}

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Cover } from "./Cover";
 import { PlaybackOptions } from "./PlaybackOptions";
+import { Badge, Button } from "@juninmd/sonido";
 import { IconButton } from "./ui/IconButton";
 import { Slider } from "./ui/Slider";
 import { usePlayer } from "../hooks/usePlayer";
@@ -65,26 +66,25 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
               <p className="truncate text-sm font-medium">{current.title}</p>
               <p className="truncate text-xs text-muted">{current.artist}</p>
             </div>
-            <span
-              className={cn(
-                "ml-1 hidden shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium xl:inline",
-                engine === "audio"
-                  ? "border-accent/40 text-accent"
-                  : "border-line text-subtle",
-              )}
-              title={
-                engine === "audio"
-                  ? t("player.engineRealTitle")
-                  : t("player.engineSimTitle")
-              }
-            >
-              {engine === "audio" ? t("player.engineReal") : t("player.engineSim")}
+            <span className="hidden shrink-0 xl:flex">
+              <Badge
+                tone={engine === "audio" ? "accent" : "neutral"}
+                dot
+                className="app-engine"
+                title={
+                  engine === "audio"
+                    ? t("player.engineRealTitle")
+                    : t("player.engineSimTitle")
+                }
+              >
+                {engine === "audio" ? t("player.engineReal") : t("player.engineSim")}
+              </Badge>
             </span>
             <IconButton
               label={liked ? t("player.unlike") : t("player.like")}
               hint="L"
               onClick={() => toggleLike(current.id)}
-              className={cn("ml-1", liked && "text-accent hover:text-accent")}
+              className={cn("ml-1", liked && "app-icon--accent")}
             >
               <Heart className={cn("size-4", liked && "fill-accent")} />
             </IconButton>
@@ -108,19 +108,21 @@ export function PlayerBar({ queueOpen, onToggleQueue, lyricsOpen, onToggleLyrics
           <IconButton label={t("player.previous")} hint="P" onClick={previous} disabled={!current}>
             <SkipBack className="size-5 fill-current" />
           </IconButton>
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="icon"
             onClick={toggle}
             disabled={!current}
             aria-label={state.isPlaying ? t("player.pause") : t("player.play")}
-            className="grid size-9 place-items-center rounded-full bg-white text-canvas transition hover:scale-105 active:scale-100 disabled:pointer-events-none disabled:opacity-40"
+            className="app-play"
           >
             {state.isPlaying ? (
               <Pause className="size-4 fill-current" />
             ) : (
               <Play className="size-4 translate-x-px fill-current" />
             )}
-          </button>
+          </Button>
           <IconButton label={t("player.next")} hint="N" onClick={next} disabled={!current}>
             <SkipForward className="size-5 fill-current" />
           </IconButton>

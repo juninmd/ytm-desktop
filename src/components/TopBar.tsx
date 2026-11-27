@@ -1,4 +1,5 @@
-import { ChevronLeft, ChevronRight, Keyboard, ListMusic, PictureInPicture2, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Keyboard, ListMusic, PictureInPicture2 } from "lucide-react";
+import { Badge, SearchField } from "@juninmd/sonido";
 import { IconButton } from "./ui/IconButton";
 import { cn } from "../lib/cn";
 import { useI18n } from "../lib/i18n";
@@ -29,49 +30,37 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue,
       <div
         className={cn(
           "relative w-full max-w-[420px] transition-[width] duration-200",
-          // Narrow windows: a round search button that opens on focus, and stays open with a query.
+          // Narrow windows: the field collapses to its icon, and opens on focus
+          // or while it holds a query (see `.app-search` in index.css).
           "max-[1100px]:w-10 max-[1100px]:focus-within:w-72",
           query && "max-[1100px]:w-72",
         )}
       >
-        <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-subtle" />
-        <input
+        <SearchField
+          // The `/` shortcut focuses this id; SearchField forwards it to the input.
           id="global-search"
-          type="search"
           value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder={t("top.placeholder")}
+          onChange={onQueryChange}
+          label={t("top.search")}
           aria-label={t("top.search")}
-          className={cn(
-            "h-10 w-full min-w-0 rounded-full border border-transparent bg-raised pl-10 text-sm",
-            // Collapsed, the right padding goes too, or the input stays wider than its button.
-            query ? "pr-10" : "pr-10 max-[1100px]:pr-0 max-[1100px]:focus:pr-10",
-            "placeholder:text-subtle hover:border-line-strong focus-visible:border-line-strong focus-visible:outline-none",
-            "max-[1100px]:placeholder:text-transparent max-[1100px]:focus:placeholder:text-subtle",
-          )}
+          placeholder={t("top.placeholder")}
+          shortcutHint
+          clearLabel={t("top.clearSearch")}
+          className="app-search"
         />
-        {query && (
-          <IconButton
-            label={t("top.clearSearch")}
-            className="absolute top-1/2 right-1 size-8 -translate-y-1/2"
-            onClick={() => onQueryChange("")}
-          >
-            <X className="size-4" />
-          </IconButton>
-        )}
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        <span className="hidden items-center gap-2 rounded-full border border-line px-3 py-1.5 text-xs text-muted xl:flex">
-          {t("top.demo")}
+        <span className="hidden xl:flex">
+          <Badge tone="neutral">{t("top.demo")}</Badge>
         </span>
-        <IconButton label={t("mini.enter")} hint="Ctrl Shift M" className="size-9 bg-raised" onClick={onOpenMini}>
+        <IconButton label={t("mini.enter")} hint="Ctrl Shift M" className="app-icon-lg app-icon-surface" onClick={onOpenMini}>
           <PictureInPicture2 className="size-4" />
         </IconButton>
         <IconButton
           label={t("keys.open")}
           hint="?"
-          className="size-9 bg-raised"
+          className="app-icon-lg app-icon-surface"
           onClick={onOpenShortcuts}
         >
           <Keyboard className="size-4" />
@@ -80,7 +69,7 @@ export function TopBar({ query, onQueryChange, onBack, queueOpen, onToggleQueue,
           label={queueOpen ? t("top.hideQueue") : t("top.showQueue")}
           hint="Q"
           active={queueOpen}
-          className="size-9 bg-raised"
+          className="app-icon-lg app-icon-surface"
           onClick={onToggleQueue}
         >
           <ListMusic className="size-4" />

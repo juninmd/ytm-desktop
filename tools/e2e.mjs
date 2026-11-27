@@ -529,7 +529,8 @@ check(
 );
 await page.locator('[data-cinema] [data-line="2"]').click();
 await page.waitForFunction(
-  () => document.querySelector('[data-cinema] input[aria-label="Posição da faixa"]')?.value >= 59,
+  // The seek rail is named by its <label> (Sonido Slider), not an aria-label.
+  () => document.querySelector('[data-cinema] input[type="range"]')?.value >= 59,
   null,
   { timeout: 3000 },
 );

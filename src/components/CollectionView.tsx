@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Clock3, Download, Heart, Loader2, Play, Shuffle } from "lucide-react";
+import { Clock3, Download, Heart, Play, Shuffle } from "lucide-react";
+import { Button, Spinner } from "@juninmd/sonido";
 import { useCatalog } from "../hooks/useCatalog";
 import { Cover } from "./Cover";
 import { TrackTable } from "./TrackTable";
@@ -81,7 +82,7 @@ export function CollectionView({
     if (loading) {
       return (
         <div className="grid place-items-center py-24">
-          <Loader2 className="size-6 animate-spin text-muted" />
+          <Spinner size={24} label={t("collection.loadingFailed")} />
         </div>
       );
     }
@@ -90,13 +91,9 @@ export function CollectionView({
       <div className="grid place-items-center px-6 py-24 text-center">
         <p className="text-lg font-semibold">{t("collection.loadingFailed")}</p>
         <p className="mt-1 text-sm text-muted">{t("collection.loadingFailedHint")}</p>
-        <button
-          type="button"
-          onClick={retry}
-          className="mt-5 rounded-full border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
-        >
+        <Button variant="secondary" onClick={retry} className="mt-5 self-center">
           {t("common.retry")}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -157,20 +154,20 @@ export function CollectionView({
         >
           <Play className="size-6 translate-x-px fill-current" />
         </button>
-        <IconButton label={t("collection.shuffle")} active={state.shuffle} onClick={toggleShuffle} className="size-9">
+        <IconButton label={t("collection.shuffle")} active={state.shuffle} onClick={toggleShuffle} className="app-icon-lg">
           <Shuffle className="size-6" />
         </IconButton>
         <IconButton
           label={leadLiked ? t("collection.unlike") : t("collection.like")}
           onClick={() => lead && toggleLike(lead.id)}
           disabled={!lead}
-          className={cn("size-9", leadLiked && "text-accent")}
+          className={cn("app-icon-lg", leadLiked && "app-icon--accent")}
         >
           <Heart className={cn("size-6", leadLiked && "fill-accent")} />
         </IconButton>
         <IconButton
           label={saving ? t("collection.downloading") : t("collection.download")}
-          className="size-9"
+          className="app-icon-lg"
           disabled={saving || tracks.length === 0}
           onClick={() => {
             setSaving(true);
@@ -189,14 +186,14 @@ export function CollectionView({
               .finally(() => setSaving(false));
           }}
         >
-          {saving ? <Loader2 className="size-6 animate-spin" /> : <Download className="size-6" />}
+          {saving ? <Spinner size={20} /> : <Download className="size-6" />}
         </IconButton>
       </div>
 
       <div className="mx-6 rounded-lg bg-black/25 py-2">
         {loading ? (
           <div className="grid place-items-center py-10">
-            <Loader2 className="size-5 animate-spin text-muted" />
+            <Spinner size={20} label={t("collection.loadingFailed")} />
           </div>
         ) : failed && tracks.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-muted">
@@ -216,20 +213,18 @@ export function CollectionView({
 
       {hasMore(collection.id) && (
         <div className="mt-6 flex justify-center">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            loading={loadingMore}
             onClick={() => {
               setLoadingMore(true);
               void loadMore(collection.id)
                 .catch(() => setFailed(true))
                 .finally(() => setLoadingMore(false));
             }}
-            disabled={loadingMore}
-            className="flex items-center gap-2 rounded-full border border-line px-5 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg disabled:opacity-40"
           >
-            {loadingMore && <Loader2 className="size-4 animate-spin" />}
             {t("search.loadMore")}
-          </button>
+          </Button>
         </div>
       )}
 
