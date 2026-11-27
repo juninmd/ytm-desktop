@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, SearchX } from "lucide-react";
+import { SearchX } from "lucide-react";
+import { Button, EmptyState, Spinner } from "@juninmd/sonido";
 import { useCatalog, type SearchFilter } from "../hooks/useCatalog";
 import { CollectionCard } from "./CollectionCard";
 import { TrackTable } from "./TrackTable";
@@ -79,25 +80,25 @@ export function SearchView({
 
   if (state === "loading" && empty) {
     return (
-      <div role="status" aria-label={t("search.loading")} className="grid place-items-center px-6 py-24 text-center text-muted">
-        <Loader2 className="size-6 animate-spin" />
+      <div className="grid place-items-center px-6 py-24 text-center text-muted">
+        <Spinner size={24} label={t("search.loading")} />
       </div>
     );
   }
 
   if (state === "error") {
     return (
-      <div role="alert" className="grid place-items-center px-6 py-24 text-center">
-        <SearchX className="size-8 text-subtle" />
-        <p className="mt-4 text-lg font-semibold">{t("search.failed")}</p>
-        <p className="mt-1 max-w-[46ch] text-sm text-muted">{error}</p>
-        <button
-          type="button"
-          onClick={() => setAttempt((value) => value + 1)}
-          className="mt-5 rounded-full border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
-        >
-          {t("common.retry")}
-        </button>
+      <div role="alert" className="px-6 py-12">
+        <EmptyState
+          icon={<SearchX className="size-7" />}
+          title={t("search.failed")}
+          description={error}
+          action={
+            <Button variant="secondary" onClick={() => setAttempt((value) => value + 1)}>
+              {t("common.retry")}
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -155,10 +156,12 @@ export function SearchView({
       </div>
 
       {empty ? (
-        <div className="grid place-items-center px-6 py-24 text-center">
-          <SearchX className="size-8 text-subtle" />
-          <p className="mt-4 text-lg font-semibold">{t("search.empty", { query })}</p>
-          <p className="mt-1 max-w-[46ch] text-sm text-muted">{t("search.emptyHint")}</p>
+        <div className="px-6 py-12">
+          <EmptyState
+            icon={<SearchX className="size-7" />}
+            title={t("search.empty", { query })}
+            description={t("search.emptyHint")}
+          />
         </div>
       ) : (
         <>
@@ -206,15 +209,13 @@ export function SearchView({
 
           {continuation && (
             <div className="mt-8 flex justify-center">
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                loading={state === "loading"}
                 onClick={() => void loadMore()}
-                disabled={state === "loading"}
-                className="flex items-center gap-2 rounded-full border border-line px-5 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg disabled:opacity-40"
               >
-                {state === "loading" && <Loader2 className="size-4 animate-spin" />}
                 {t("search.loadMore")}
-              </button>
+              </Button>
             </div>
           )}
         </>

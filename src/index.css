@@ -218,3 +218,249 @@ input[type="range"].slider:focus-visible::-webkit-slider-thumb {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Sonido 2.5 bridge.
+
+   Sonido ships its own coral/violet palette. The app keeps its identity by
+   pointing every --sn-* token at the theme tokens above, so a Sonido component
+   inherits the dark shell and the single warm accent. `data-theme` lives on
+   <html>; the app has one (dark) theme.
+
+   These rules are intentionally unlayered: Sonido's stylesheet is unlayered
+   too, so a Tailwind utility (which lives in @layer utilities) cannot win
+   against it. Component-specific overrides below therefore use real selectors
+   instead of utility classes.
+--------------------------------------------------------------------------- */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --sn-color-bg: var(--color-canvas);
+  --sn-color-surface: var(--color-panel);
+  --sn-color-surface-2: var(--color-raised);
+  --sn-color-surface-hover: var(--color-hover);
+  --sn-color-border: var(--color-line);
+  --sn-color-border-soft: var(--color-line);
+  --sn-color-text: var(--color-fg);
+  --sn-color-text-dim: var(--color-muted);
+  --sn-color-text-faint: var(--color-subtle);
+  --sn-color-on-accent: #fff;
+
+  --sn-color-accent: var(--color-accent);
+  --sn-color-accent-2: var(--color-accent-soft);
+  --sn-sig-1: var(--color-accent-strong);
+  --sn-sig-2: var(--color-accent);
+  --sn-sig-3: var(--color-accent-soft);
+  --sn-gradient: linear-gradient(135deg, var(--color-accent-strong), var(--color-accent));
+  --sn-gradient-signature: linear-gradient(
+    115deg,
+    var(--color-accent-strong) 0%,
+    var(--color-accent) 55%,
+    var(--color-accent-soft) 100%
+  );
+  --sn-gradient-soft: linear-gradient(135deg, rgb(255 61 90 / 0.16), rgb(255 61 90 / 0.04));
+  --sn-glass: rgb(14 14 18 / 0.6);
+  --sn-glass-strong: rgb(14 14 18 / 0.96);
+  --sn-glass-edge: var(--color-line);
+  --sn-scrim: rgb(3 3 5 / 0.66);
+
+  /* One family, one scale: the app's type stays the app's type. */
+  --sn-font: var(--font-sans);
+  --sn-font-display: var(--font-sans);
+  --sn-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --sn-text-xs: 12px;
+  --sn-text-sm: 13px;
+  --sn-text-md: 14px;
+  --sn-text-lg: 16px;
+  --sn-text-xl: 20px;
+  --sn-radius: var(--radius-panel);
+  --sn-ring: 0 0 0 2px var(--color-accent);
+}
+
+/* Icon-only Button: desktop chrome is denser than the library default, and a
+   toolbar icon should not lift off the bar on hover. */
+.sn-button.app-icon {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 999px;
+}
+.sn-button.app-icon:hover:not(:disabled, [aria-disabled="true"]),
+.sn-button.app-icon:active:not(:disabled, [aria-disabled="true"]) {
+  transform: none;
+}
+.sn-button.app-icon-lg {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+}
+.sn-button.app-icon-sm {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+/* Toolbar icons sit on a raised pill, not on the panel. */
+.sn-button.app-icon.app-icon-surface {
+  --sn-btn-bg: var(--color-raised);
+}
+.sn-button.app-icon.app-icon-surface:hover:not(:disabled, [aria-disabled="true"]) {
+  --sn-btn-bg: var(--color-hover);
+}
+/* Active (pressed) and accented icon buttons keep the app's accent ink. */
+.sn-button.app-icon--active,
+.sn-button.app-icon--accent {
+  --sn-btn-fg: var(--color-accent);
+}
+
+/* The primary transport control keeps its white disc. */
+.sn-button.app-play {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--color-canvas);
+}
+.sn-button.app-play:hover:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(1.05);
+  box-shadow: none;
+}
+.sn-button.app-play:active:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(1);
+}
+
+/* The engine pill sits in the player bar next to the track title; keep it compact. */
+.sn-badge.app-engine {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+/* The player bar draws its own time labels around the rail, so the inline
+   label/value row is redundant there. */
+.sn-slider.app-slider {
+  gap: 0;
+  width: 100%;
+}
+.sn-slider.app-slider .sn-slider__meta {
+  display: none;
+}
+.sn-slider.app-slider .sn-slider__input {
+  height: 14px;
+}
+.sn-slider.app-slider .sn-slider__input::-webkit-slider-runnable-track {
+  height: 4px;
+}
+.sn-slider.app-slider .sn-slider__input::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 0;
+  background: #fff;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.sn-slider.app-slider .sn-slider__input:hover::-webkit-slider-thumb,
+.sn-slider.app-slider .sn-slider__input:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+.sn-slider.app-slider.app-slider--plain .sn-slider__input::-webkit-slider-runnable-track {
+  background: var(--sn-color-surface-hover);
+}
+
+/* Global search: a pill that collapses to its icon on narrow windows and opens
+   again on focus or when it holds a query. */
+.sn-search.app-search {
+  min-height: 40px;
+  padding: 0 4px 0 12px;
+  border-color: transparent;
+  border-radius: 999px;
+  background: var(--color-raised);
+}
+.sn-search.app-search:focus-within {
+  border-color: var(--color-line-strong);
+  box-shadow: none;
+}
+.sn-search.app-search .sn-search__input {
+  height: 38px;
+  font: 400 14px / 1 var(--font-sans);
+}
+.sn-search.app-search .sn-search__input::placeholder {
+  color: var(--color-subtle);
+}
+.sn-search.app-search .sn-search__clear {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  color: var(--color-muted);
+}
+.sn-search.app-search .sn-search__clear:hover {
+  background: rgb(255 255 255 / 0.08);
+  color: var(--color-fg);
+}
+@media (max-width: 1100px) {
+  .sn-search.app-search:not(:focus-within):has(.sn-search__input:placeholder-shown) {
+    justify-content: center;
+    padding: 0;
+  }
+  .sn-search.app-search:not(:focus-within):has(.sn-search__input:placeholder-shown)
+    .sn-search__input {
+    flex: 0 1 0;
+    width: 0;
+    padding: 0;
+  }
+  .sn-search.app-search:not(:focus-within):has(.sn-search__input:placeholder-shown)
+    .sn-search__clear,
+  .sn-search.app-search:not(:focus-within):has(.sn-search__input:placeholder-shown)
+    .sn-search__kbd {
+    display: none;
+  }
+}
+
+/* Sidebar navigation sits inside the app's own panel, without the library's
+   rail chrome (own width, border and blur). */
+.sn-navrail.app-navrail {
+  width: auto;
+  gap: var(--sn-space-2);
+  padding: 0 0 8px;
+  border-right: 0;
+  background: none;
+  backdrop-filter: none;
+}
+.sn-navrail.app-navrail .sn-navrail__brand {
+  padding: 12px 12px 10px;
+  font: 600 15px / 1.2 var(--font-sans);
+}
+.sn-navrail.app-navrail .sn-navrail__link {
+  min-height: 38px;
+  border-radius: 6px;
+}
+.sn-navrail.app-navrail .sn-navrail__link::before {
+  display: none;
+}
+.sn-navrail.app-navrail .sn-navrail__link[aria-current="page"] {
+  background: var(--color-hover);
+}
+
+/* Dialog widths follow the app's two sizes. */
+.sn-dialog.app-dialog {
+  max-width: min(576px, calc(100vw - 48px));
+}
+.sn-dialog.app-dialog.app-dialog--sm {
+  max-width: min(448px, calc(100vw - 48px));
+}
+
+/* Cover art keeps the app's corner radii. */
+.sn-artwork.app-cover {
+  border-radius: 6px;
+  box-shadow: none;
+}
+.sn-artwork.app-cover.app-cover--round {
+  border-radius: 999px;
+}
+.sn-artwork.app-cover.app-cover--lg {
+  border-radius: 8px;
+}

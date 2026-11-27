@@ -78,7 +78,7 @@ export function MiniPlayer({
             <IconButton
               label={autoHide ? t("mini.autoHideOff") : t("mini.autoHideOn")}
               active={autoHide}
-              className="size-7"
+              className="app-icon-sm"
               onClick={onToggleAutoHide}
             >
               {autoHide ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
@@ -86,12 +86,12 @@ export function MiniPlayer({
             <IconButton
               label={pinned ? t("mini.unpin") : t("mini.pin")}
               active={pinned}
-              className="size-7"
+              className="app-icon-sm"
               onClick={onTogglePin}
             >
               {pinned ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}
             </IconButton>
-            <IconButton label={t("mini.exit")} className="size-7" onClick={onExit}>
+            <IconButton label={t("mini.exit")} className="app-icon-sm" onClick={onExit}>
               <Maximize2 className="size-3.5" />
             </IconButton>
           </div>
@@ -145,7 +145,7 @@ export function MiniPlayer({
                 hint="L"
                 onClick={() => current && toggleLike(current.id)}
                 disabled={!current}
-                className={cn(liked && "text-accent hover:text-accent")}
+                className={cn(liked && "app-icon--accent")}
               >
                 <Heart className={cn("size-4", liked && "fill-accent")} />
               </IconButton>
@@ -203,7 +203,7 @@ export function MiniPlayer({
                 </button>
                 <IconButton
                   label={t("menu.remove")}
-                  className="size-6 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
+                  className="opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
                   onClick={() => dequeue(state.cursor + 1 + index)}
                 >
                   <X className="size-3.5" />

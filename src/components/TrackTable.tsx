@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Check, CircleArrowDown, Clock, Disc3, Download, Ellipsis, Heart, Info, ListEnd, ListStart, Loader2, Play, UserRound } from "lucide-react";
+import { Check, CircleArrowDown, Clock, Disc3, Download, Ellipsis, Heart, Info, ListEnd, ListStart, Play, UserRound } from "lucide-react";
+import { Spinner } from "@juninmd/sonido";
 import { Cover } from "./Cover";
 import { Eq } from "./ui/Eq";
 import { IconButton } from "./ui/IconButton";
@@ -217,7 +218,7 @@ export function TrackTable({
                   className={cn("opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100", saved && "opacity-100")}
                 >
                   {busy.includes(track.id) ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <Spinner size={16} />
                   ) : saved ? (
                     <Check className="size-4 text-accent" />
                   ) : (

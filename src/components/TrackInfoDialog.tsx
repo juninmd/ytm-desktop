@@ -26,7 +26,7 @@ export function TrackInfoDialog({ track, onClose }: { track: Track; onClose: () 
   const rows = entries.filter(([, value]) => value);
 
   return (
-    <Modal title={t("info.title")} closeLabel={t("info.close")} onClose={onClose} className="max-w-md">
+    <Modal title={t("info.title")} onClose={onClose} className="app-dialog--sm">
       <div className="mb-4 flex items-center gap-3">
         <Cover
           seed={track.albumId || track.album}

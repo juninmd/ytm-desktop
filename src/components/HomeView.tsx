@@ -3,7 +3,8 @@ import { CollectionCard } from "./CollectionCard";
 import { usePlayCollection } from "../hooks/usePlayCollection";
 import { heroStyle } from "../lib/cover";
 import { Cover } from "./Cover";
-import { Play } from "lucide-react";
+import { Play, TriangleAlert } from "lucide-react";
+import { Button, EmptyState, Skeleton } from "@juninmd/sonido";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import type { Collection } from "../types";
 
@@ -20,24 +21,25 @@ export function HomeView({ onOpen }: { onOpen: (collection: Collection) => void 
 
   if (status === "loading") {
     return (
-      <div className="grid place-items-center px-6 py-24 text-center text-sm text-muted">
-        {t("home.loading")}
+      <div className="px-6 pt-6">
+        <Skeleton rows={6} media label={t("home.loading")} />
       </div>
     );
   }
 
   if (status === "error") {
     return (
-      <div className="grid place-items-center px-6 py-24 text-center">
-        <p className="text-lg font-semibold">{t("home.error")}</p>
-        <p className="mt-1 max-w-[46ch] text-sm text-muted">{error}</p>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          className="mt-5 rounded-full border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
-        >
-          {t("common.retry")}
-        </button>
+      <div className="px-6 py-12">
+        <EmptyState
+          icon={<TriangleAlert className="size-7" />}
+          title={t("home.error")}
+          description={error}
+          action={
+            <Button variant="secondary" onClick={() => void refresh()}>
+              {t("common.retry")}
+            </Button>
+          }
+        />
       </div>
     );
   }

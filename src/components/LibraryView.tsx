@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EmptyState } from "@juninmd/sonido";
 import { useCatalog } from "../hooks/useCatalog";
 import { CollectionCard } from "./CollectionCard";
 import { LibraryCookieForm } from "./LibraryCookieForm";
@@ -63,7 +64,7 @@ export function LibraryView({ onOpen }: { onOpen: (collection: Collection) => vo
       </div>
 
       {visible.length === 0 ? (
-        <p className="mt-8 text-sm text-muted">{t("library.empty")}</p>
+        <EmptyState className="mt-6" title={t("library.empty")} />
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
           {visible.map((collection) => (

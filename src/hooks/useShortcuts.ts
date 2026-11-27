@@ -95,8 +95,9 @@ export function useShortcuts({ toggleQueue, toggleLyrics, toggleHelp, toggleMini
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
-      // A modal dialog or an open menu owns the keyboard until it closes.
-      if (document.querySelector('[aria-modal="true"], [role="menu"]')) return;
+      // A modal dialog or an open menu owns the keyboard until it closes. Sonido's
+      // Dialog is a native <dialog>, which carries no aria-modal attribute.
+      if (document.querySelector('[aria-modal="true"], [role="menu"], dialog[open]')) return;
       const command = resolveShortcut(event, targetOf(event.target));
       if (!command) return;
       event.preventDefault();
